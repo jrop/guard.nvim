@@ -1,0 +1,6 @@
+return {
+  include = {
+    'lua/guard$',
+  },
+  tick = true,
+}
