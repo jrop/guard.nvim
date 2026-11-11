@@ -5,6 +5,17 @@
 
 local g = require 'guard'
 
+-- Under `busted --coverage`, luacov's tick interval flushes every 100 hits, but
+-- the parent test process exits through Neovim rather than Lua's os.exit, so
+-- the final partial batch would be lost without this save.
+if package.loaded['luacov.runner'] then
+  ---@type { save_stats: fun() }
+  local runner = package.loaded['luacov.runner']
+  vim.api.nvim_create_autocmd('VimLeavePre', {
+    callback = function() runner.save_stats() end,
+  })
+end
+
 describe('guard', function()
   describe('module', function()
     it(
@@ -116,6 +127,31 @@ describe('guard', function()
       it('should reject non-functions', function()
         assert.has_error(function() g.func():parse 'function' end)
         assert.has_error(function() g.func():parse {} end)
+      end)
+    end)
+
+    describe('userdata()', function()
+      it('should accept userdata', function()
+        local handle = vim.uv.new_timer()
+        assert.are.equal(handle, g.userdata():parse(handle))
+        handle:close()
+      end)
+
+      it('should reject non-userdata', function()
+        assert.has_error(function() g.userdata():parse 'userdata' end)
+        assert.has_error(function() g.userdata():parse {} end)
+      end)
+    end)
+
+    describe('thread()', function()
+      it('should accept coroutines', function()
+        local co = coroutine.create(function() end)
+        assert.are.equal(co, g.thread():parse(co))
+      end)
+
+      it('should reject non-threads', function()
+        assert.has_error(function() g.thread():parse 'thread' end)
+        assert.has_error(function() g.thread():parse {} end)
       end)
     end)
   end)
@@ -235,6 +271,15 @@ describe('guard', function()
     it('should reject invalid values', function()
       local StringToNumber = g.record(g.string(), g.number())
       assert.has_error(function() StringToNumber:parse { a = 'not a number' } end)
+    end)
+
+    it('should report the key and its problem when a key fails', function()
+      local StringToNumber = g.record(g.string(), g.number())
+      local result = StringToNumber:try_parse { [1] = 10 }
+      assert.is_false(result.ok)
+      local msg = g.ParseError.new(result.actual, result.problems):format(false)
+      assert.is_truthy(msg:find('[key "1"]', 1, true), msg)
+      assert.is_truthy(msg:find('Expected string', 1, true), msg)
     end)
   end)
 
@@ -366,6 +411,38 @@ describe('guard', function()
     end)
   end)
 
+  describe('instance_of()', function()
+    it('should accept values with the metatable', function()
+      local Point = {}
+      local point = setmetatable({ x = 1, y = 2 }, Point)
+      assert.are.equal(point, g.instance_of(Point, 'Point'):parse(point))
+    end)
+
+    it('should reject tables with another metatable', function()
+      local Point = {}
+      assert.has_error(function() g.instance_of(Point, 'Point'):parse {} end)
+      assert.has_error(function() g.instance_of(Point, 'Point'):parse(setmetatable({}, {})) end)
+    end)
+
+    it('should reject non-tables', function()
+      assert.has_error(function() g.instance_of({}, 'Point'):parse 'Point' end)
+    end)
+
+    it('should name the metatable and the generic fallback in errors', function()
+      local Point = {}
+      local named = g.instance_of(Point, 'Point'):try_parse {}
+      local named_msg = g.ParseError.new(named.actual, named.problems):format(false)
+      assert.is_truthy(named_msg:find('Expected instance of Point', 1, true), named_msg)
+
+      local unnamed = g.instance_of(Point):try_parse {}
+      local unnamed_msg = g.ParseError.new(unnamed.actual, unnamed.problems):format(false)
+      assert.is_truthy(
+        unnamed_msg:find('Expected instance of specific metatable', 1, true),
+        unnamed_msg
+      )
+    end)
+  end)
+
   describe('optional()', function()
     it('should allow nil', function()
       local MaybeString = g.string():optional()
@@ -452,6 +529,13 @@ describe('guard', function()
       assert.are.equal('true', g.into_string():parse(true))
       assert.are.equal('false', g.into_string():parse(false))
     end)
+
+    it('should reject values with no string form', function()
+      assert.has_error(function() g.into_string():parse {} end)
+      assert.has_error(function()
+        g.into_string():parse(function() end)
+      end)
+    end)
   end)
 
   describe('into_boolean()', function()
@@ -479,6 +563,17 @@ describe('guard', function()
       assert.are.equal(true, g.into_boolean():parse(1))
       assert.are.equal(true, g.into_boolean():parse(-1))
       assert.are.equal(false, g.into_boolean():parse(0))
+    end)
+
+    it('should reject strings that are not boolean words', function()
+      assert.has_error(function() g.into_boolean():parse 'maybe' end)
+    end)
+
+    it('should reject values with no boolean form', function()
+      assert.has_error(function() g.into_boolean():parse {} end)
+      assert.has_error(function()
+        g.into_boolean():parse(function() end)
+      end)
     end)
   end)
 
@@ -518,6 +613,12 @@ describe('guard', function()
       assert.are.equal('42', g.into_json():parse(42))
       assert.are.equal('"hello"', g.into_json():parse 'hello')
       assert.are.equal('true', g.into_json():parse(true))
+    end)
+
+    it('should reject values that JSON cannot serialize', function()
+      assert.has_error(function()
+        g.into_json():parse(function() end)
+      end)
     end)
   end)
 
@@ -673,6 +774,14 @@ describe('guard', function()
       local verbose_msg = err:format(true)
       assert.matches('got:', verbose_msg)
       assert.matches('not a number', verbose_msg)
+    end)
+
+    it('should fall back to tostring when JSON cannot encode the value', function()
+      local value = function() end
+      local problems = { { path = {}, message = 'Expected number', actual = value } }
+      local msg = g.ParseError.new(value, problems):format(true)
+      assert.is_truthy(msg:find('got:', 1, true), msg)
+      assert.is_truthy(msg:find('function:', 1, true), msg)
     end)
 
     it('should format ParseError nicely', function()
@@ -875,6 +984,10 @@ describe('guard', function()
         assert.are.equal('number', g.number():infer_type())
         assert.are.equal('boolean', g.boolean():infer_type())
         assert.are.equal('integer', g.integer():infer_type())
+        assert.are.equal('table', g.table():infer_type())
+        assert.are.equal('function', g.func():infer_type())
+        assert.are.equal('userdata', g.userdata():infer_type())
+        assert.are.equal('thread', g.thread():infer_type())
         assert.are.equal('any', g.any():infer_type())
         assert.are.equal('nil', g.nil_():infer_type())
       end)
@@ -892,6 +1005,38 @@ describe('guard', function()
       it('should preserve type through invariant', function()
         local Positive = g.number():invariant(function(x) return x > 0 end, 'Must be positive')
         assert.are.equal('number', Positive:infer_type())
+      end)
+
+      it('should preserve the inner type through map', function()
+        local Doubled = g.number():map(function(x) return g.ok(x * 2) end)
+        assert.are.equal('number', Doubled:infer_type())
+      end)
+
+      it('should use the first guard for all_of', function()
+        assert.are.equal('string', g.all_of(g.string(), g.pattern '^x'):infer_type())
+        assert.are.equal('any', g.all_of():infer_type())
+      end)
+
+      it('should name instance_of types', function()
+        local Point = {}
+        assert.are.equal('Point', g.instance_of(Point, 'Point'):infer_type())
+        assert.are.equal('specific metatable', g.instance_of(Point):infer_type())
+      end)
+
+      it(
+        'should infer literal unions and fall back to any for other values',
+        function() assert.are.equal('1|true|any', g.literal(1, true, {}):infer_type()) end
+      )
+
+      it('should fall back to any when a schema has no inferable metadata', function()
+        local function opaque(schema)
+          return g.Guard.new(schema, function(x) return g.ok(x) end)
+        end
+        assert.are.equal('any?', opaque({ type = 'optional' }):infer_type())
+        assert.are.equal('any[]', opaque({ type = 'array' }):infer_type())
+        assert.are.equal('any', opaque({ type = 'map' }):infer_type())
+        assert.are.equal('any', opaque({ type = 'custom' }):infer_type())
+        assert.are.equal('any', opaque({ type = 'unknown' }):infer_type())
       end)
     end)
 
@@ -970,9 +1115,17 @@ local function cli(argv)
   if package.loaded['luacov.runner'] then
     cmd[#cmd + 1] = '--cmd'
     cmd[#cmd + 1] = 'lua require("luacov")'
+    -- The child runs too few instrumented lines to reach luacov's tick
+    -- interval, and Neovim does not exit through Lua's os.exit, so save at the
+    -- event Neovim does emit.
+    cmd[#cmd + 1] = '--cmd'
+    cmd[#cmd + 1] = 'autocmd VimLeavePre * lua require("luacov.runner").save_stats()'
   end
   cmd[#cmd + 1] = '-l'
-  cmd[#cmd + 1] = vim.fn.fnamemodify('lua/guard.lua', ':p')
+  -- Keep this relative. luacov keys stats by the path string a chunk was loaded
+  -- from, so the parent's relative `lua/guard.lua` and the child's absolute path
+  -- would appear as two files in the coverage report.
+  cmd[#cmd + 1] = 'lua/guard.lua'
   for _, arg in ipairs(argv) do
     cmd[#cmd + 1] = arg
   end

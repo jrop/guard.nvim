@@ -7,41 +7,36 @@ the same guards can emit LuaCATS annotations for editor type checking. An
 example of this is a response schema that both rejects a malformed API payload
 at runtime and gives EmmyLua the field types of a valid payload.
 
-The module is unified: `require 'guard'` returns the library, and running the
-file as the main `nvim -l` script runs the schema generator.
+The module is unified: requiring the vendored file returns the library, and
+running it as the main `nvim -l` script runs the schema generator.
 
-## Install
+## Vendor the file
 
-Each release publishes two files. Both are single-file artifacts, so neither
-needs a plugin manager or a checkout.
+`guard` is meant to travel with the project that uses it, in the same spirit as
+a binary in `node_modules/.bin`. Vendor it at `lua/<MYPKG>/_vendor/guard.lua`
+and require it from there; there is no global install to keep in sync.
 
-- `guard.lua` - the library. Copy it into a directory on Neovim's `lua/`
-  search path and `require 'guard'`.
-- `guard` - the CLI. It has args.nvim bundled and is executable, so one
-  download runs the generator.
+An example of this is a plugin called `myplugin`:
 
 ```sh
 version=v0.1.0
 base="https://github.com/jrop/guard.nvim/releases/download/$version"
-curl -fsSLo guard.lua "$base/guard.lua"
-curl -fsSLo guard.lua.sha256 "$base/guard.lua.sha256"
-curl -fsSLo guard "$base/guard"
-curl -fsSLo guard.sha256 "$base/guard.sha256"
-sha256sum -c guard.lua.sha256
-sha256sum -c guard.sha256
-
-mkdir -p ~/.local/share/nvim/site/lua ~/.local/bin
-install -m 644 guard.lua ~/.local/share/nvim/site/lua/guard.lua
-install -m 755 guard ~/.local/bin/guard
+mkdir -p lua/myplugin/_vendor
+curl -fsSLo lua/myplugin/_vendor/guard.lua "$base/guard.lua"
+curl -fsSLo lua/myplugin/_vendor/guard.lua.sha256 "$base/guard.lua.sha256"
+(cd lua/myplugin/_vendor && sha256sum -c guard.lua.sha256 && rm guard.lua.sha256)
 ```
 
-The checksum files accompany the artifacts under the same names plus
-`.sha256`.
+The checksum file names `guard.lua`, so verify it from the directory that holds
+the copy. The vendored file is both the runtime library and the CLI, and it has
+args.nvim bundled, so no other files are needed.
 
 ## Validate a value
 
+The examples use the vendored path from the previous section.
+
 ```lua
-local g = require 'guard'
+local g = require 'myplugin._vendor.guard'
 
 local User = g.object {
   name = g.string(),
@@ -84,7 +79,7 @@ Write a schema module that exports every guard you want as types:
 
 ```lua
 -- lua/myplugin/schemas.lua
-local g = require 'guard'
+local g = require 'myplugin._vendor.guard'
 
 return {
   api = {
@@ -96,11 +91,14 @@ return {
 }
 ```
 
-Run the generator on it:
+Run the generator from the vendored copy. `--module` tells the generator which
+name the schema uses for guard, so the schema's `require` resolves to the
+running artifact:
 
 ```sh
-guard lua/myplugin/schemas.lua
-# or: nvim -l guard lua/myplugin/schemas.lua
+nvim -l lua/myplugin/_vendor/guard.lua \
+  --module myplugin._vendor.guard \
+  lua/myplugin/schemas.lua
 ```
 
 The generator writes `lua/myplugin/schemas.types.lua` next to the source. The
@@ -117,12 +115,9 @@ if result.ok then
 end
 ```
 
-Target files normally require guard as `guard`. Pass `--module` when they use
-a different name, and repeat the flag if a file requires several names:
-
-```sh
-guard --module myplugin.guard lua/myplugin/schemas.lua
-```
+The generator defaults to the module name `guard`, which suits a standalone
+copy. Pass `--module` for the name a target file actually requires, and repeat
+the flag when a file requires guard under several names.
 
 The generator expands globs, skips existing `.types.lua` files, and exits
 nonzero when a target file fails to load or run.
@@ -150,6 +145,7 @@ git submodule update --init --recursive
 Run one spec file directly after `mise run test:prepare`:
 
 ```sh
-eval $(nvimv env 0.12.6)
+mise run test:prepare
+eval "$(luarocks path)"
 busted spec/guard_spec.lua
 ```

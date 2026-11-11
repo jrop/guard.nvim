@@ -29,8 +29,7 @@ end
 local M = {}
 
 -- The version a checkout reports. The release task stamps the tag into the
--- published `guard` executable, so the asset always names the release it came
--- from.
+-- published `guard.lua`, so the artifact always names the release it came from.
 local VERSION = '0.0.0'
 
 --- @alias guard.ParseResult<T> guard.ParseOk<T>|guard.ParseError
@@ -1019,11 +1018,11 @@ end
 --- target file.
 --- @param argv string[]
 local function main(argv)
-  -- The plain library artifact ships without args.nvim; only the bundled
-  -- `guard` executable has it inlined. Reaching this branch means the user ran
-  -- the library as a CLI, so name the artifact that does support that.
+  -- A checkout resolves the vendored parser through package.path, while the
+  -- released guard.lua has it inlined. If neither exists, this copy was moved
+  -- without its parser, so name the artifact that does support the CLI.
   local args_ok, args = pcall(require, 'guard._vendor.args')
-  if not args_ok then fail 'args.nvim is not available; use the bundled guard executable' end
+  if not args_ok then fail 'args.nvim is not available; use the released guard.lua' end
 
   local parsed_ok, parsed = pcall(args.parse, ARGS_SPEC, argv)
   if not parsed_ok then fail(parsed) end

@@ -4,8 +4,8 @@
 
 `lua/guard.lua` is one unified file: requiring it returns the validation
 library, and running it as the main `nvim -l` script runs the schema generator.
-The generator loads its argument parser from `lua/guard/_vendor/args.lua` only
-on the run-as-main path, so a library consumer never needs that file.
+A checkout resolves the argument parser from `lua/guard/_vendor/args.lua`, and
+the released artifact has that parser inlined, so one file supports both roles.
 
 The library validates Lua values against composable guards and renders guard
 schemas as LuaCATS annotations. The generator walks a target file's exported
@@ -53,17 +53,13 @@ busted spec/guard_spec.lua
   annotations. The CLI cases write a schema tree to a temporary directory, run
   `lua/guard.lua` in a child Neovim, and inspect the emitted `.types.lua` file.
 
-## Release artifacts
+## Release artifact
 
-`mise run release` publishes two files:
+`mise run release` publishes one file:
 
-- **`guard.lua`** - a stamped copy of `lua/guard.lua`. It is not bundled. The
-  CLI opens with `require 'guard._vendor.args'`, but that line only runs when
-  the file is the main script; requiring the library evaluates no external
-  module.
-- **`guard`** - `lua/guard.lua` bundled with `nvim-bundle --bin`, so the
-  vendored args.nvim copy is inlined and the file is executable. This is the
-  CLI artifact.
+- **`guard.lua`** - `lua/guard.lua` bundled with `nvim-bundle --bin`, so the
+  vendored args.nvim copy is inlined and the file runs as both a CLI and a
+  library.
 
 The release task refuses an untagged `HEAD`, a dirty tree, or a tag missing
 from the remote.
@@ -76,9 +72,9 @@ from the remote.
 - Keep the library free of load-time file or module dependencies. The CLI's
   argument-parser require belongs inside `main`, not at module scope, so
   requiring guard never loads args.nvim.
-- The CLI's default module name is `guard`, because the published `guard`
-  executable cannot infer the guard module's name from its own filename.
-  Target schemas that use another name pass `--module`.
+- The CLI's default module name is `guard`, because the published `guard.lua`
+  cannot infer the guard module's name from its own filename. Target schemas
+  that use another name pass `--module`.
 - Keep errors actionable and exit nonzero when a target file fails.
 - Preserve the generated header: it records the source, module prefix, and the
   exact regeneration command.
