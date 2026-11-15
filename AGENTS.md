@@ -19,24 +19,17 @@ All tasks use `mise`:
 - `mise run fmt` - format with stylua
 - `mise run fmt:check` - check formatting
 - `mise run lint` - type-check with `emmylua_check` (warnings are errors)
-- `mise run test` - run busted against Neovim 0.12.6
-- `mise run test:fast` - run busted against the default Neovim without reinstalling nightly
-- `mise run test:all` - run busted against 0.10.4, 0.11.7, 0.12.6, and nightly
-- `mise run test:coverage` - test with luacov (covers `lua/guard` only)
+- `mise run test` - run the suite against Neovim 0.12.6
+- `mise run test:all` - run the suite against 0.10.4, 0.11.7, 0.12.6, and nightly
+- `mise run test:coverage` - run the suite with line coverage of `lua/`
 - `mise run ci` - `fmt:check` then `lint` then `test:all`
 - `mise run release` - publish the current `v*` tag to GitHub (maintainers only)
 
-Initialize the type-stub submodule after cloning:
+The suite runs on the vendored test.nvim runner, so a spec file or a case
+filter can be run directly with no setup:
 
 ```sh
-git submodule update --init --recursive
-```
-
-Run one spec file directly after `mise run test:prepare`:
-
-```sh
-eval $(nvimv env 0.12.6)
-busted spec/guard_spec.lua
+nvim -l lua/guard/vendor/test.lua spec/guard_spec.lua --filter 'CLI'
 ```
 
 ## Architecture
@@ -48,6 +41,9 @@ busted spec/guard_spec.lua
 - **`lua/guard/_vendor/args.lua`** - vendored args.nvim v0.1.0 parser. Treat it
   as third-party code: update it from the upstream release rather than editing
   it in place.
+- **`lua/guard/vendor/test.lua`** - vendored test.nvim runner and assertions,
+  managed by `nvim-bundle install` from `nvim-bundle.json`. Update it with
+  `nvim-bundle update test` rather than editing it in place.
 - **`spec/guard_spec.lua`** - the whole test suite. The library cases build
   guards directly and assert parse results, formatted errors, or generated
   annotations. The CLI cases write a schema tree to a temporary directory, run

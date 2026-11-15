@@ -4,17 +4,8 @@
 --- @diagnostic disable: undefined-field
 
 local g = require 'guard'
-
--- Under `busted --coverage`, luacov's tick interval flushes every 100 hits, but
--- the parent test process exits through Neovim rather than Lua's os.exit, so
--- the final partial batch would be lost without this save.
-if package.loaded['luacov.runner'] then
-  ---@type { save_stats: fun() }
-  local runner = package.loaded['luacov.runner']
-  vim.api.nvim_create_autocmd('VimLeavePre', {
-    callback = function() runner.save_stats() end,
-  })
-end
+local t = require 'guard.vendor.test'
+local assert, describe, it, after_each = t.assert, t.describe, t.it, t.after_each
 
 describe('guard', function()
   describe('module', function()
@@ -27,61 +18,61 @@ describe('guard', function()
   describe('primitives', function()
     describe('string()', function()
       it('should accept strings', function()
-        assert.are.equal('hello', g.string():parse 'hello')
-        assert.are.equal('', g.string():parse '')
+        assert.equal(g.string():parse 'hello', 'hello')
+        assert.equal(g.string():parse '', '')
       end)
 
       it('should reject non-strings', function()
-        assert.has_error(function() g.string():parse(123) end)
-        assert.has_error(function() g.string():parse(true) end)
-        assert.has_error(function() g.string():parse {} end)
-        assert.has_error(function() g.string():parse(nil) end)
+        assert.raises(function() g.string():parse(123) end)
+        assert.raises(function() g.string():parse(true) end)
+        assert.raises(function() g.string():parse {} end)
+        assert.raises(function() g.string():parse(nil) end)
       end)
 
       it('should return true for is() on strings', function()
-        assert.is_true(g.string():is 'hello')
-        assert.is_false(g.string():is(123))
+        assert.equal(g.string():is 'hello', true)
+        assert.equal(g.string():is(123), false)
       end)
     end)
 
     describe('number()', function()
       it('should accept numbers', function()
-        assert.are.equal(42, g.number():parse(42))
-        assert.are.equal(3.14, g.number():parse(3.14))
-        assert.are.equal(-1, g.number():parse(-1))
-        assert.are.equal(0, g.number():parse(0))
+        assert.equal(g.number():parse(42), 42)
+        assert.equal(g.number():parse(3.14), 3.14)
+        assert.equal(g.number():parse(-1), -1)
+        assert.equal(g.number():parse(0), 0)
       end)
 
       it('should reject non-numbers', function()
-        assert.has_error(function() g.number():parse '42' end)
-        assert.has_error(function() g.number():parse(true) end)
-        assert.has_error(function() g.number():parse {} end)
+        assert.raises(function() g.number():parse '42' end)
+        assert.raises(function() g.number():parse(true) end)
+        assert.raises(function() g.number():parse {} end)
       end)
     end)
 
     describe('integer()', function()
       it('should accept integers', function()
-        assert.are.equal(42, g.integer():parse(42))
-        assert.are.equal(-100, g.integer():parse(-100))
-        assert.are.equal(0, g.integer():parse(0))
+        assert.equal(g.integer():parse(42), 42)
+        assert.equal(g.integer():parse(-100), -100)
+        assert.equal(g.integer():parse(0), 0)
       end)
 
       it('should reject floats', function()
-        assert.has_error(function() g.integer():parse(3.14) end)
-        assert.has_error(function() g.integer():parse(1.5) end)
+        assert.raises(function() g.integer():parse(3.14) end)
+        assert.raises(function() g.integer():parse(1.5) end)
       end)
     end)
 
     describe('boolean()', function()
       it('should accept booleans', function()
-        assert.are.equal(true, g.boolean():parse(true))
-        assert.are.equal(false, g.boolean():parse(false))
+        assert.equal(g.boolean():parse(true), true)
+        assert.equal(g.boolean():parse(false), false)
       end)
 
       it('should reject non-booleans', function()
-        assert.has_error(function() g.boolean():parse(1) end)
-        assert.has_error(function() g.boolean():parse 'true' end)
-        assert.has_error(function() g.boolean():parse(nil) end)
+        assert.raises(function() g.boolean():parse(1) end)
+        assert.raises(function() g.boolean():parse 'true' end)
+        assert.raises(function() g.boolean():parse(nil) end)
       end)
     end)
 
@@ -89,106 +80,106 @@ describe('guard', function()
       it('should accept nil', function() assert.is_nil(g.nil_():parse(nil)) end)
 
       it('should reject non-nil', function()
-        assert.has_error(function() g.nil_():parse(0) end)
-        assert.has_error(function() g.nil_():parse '' end)
-        assert.has_error(function() g.nil_():parse(false) end)
+        assert.raises(function() g.nil_():parse(0) end)
+        assert.raises(function() g.nil_():parse '' end)
+        assert.raises(function() g.nil_():parse(false) end)
       end)
     end)
 
     describe('any()', function()
       it('should accept anything', function()
-        assert.are.equal('hello', g.any():parse 'hello')
-        assert.are.equal(42, g.any():parse(42))
+        assert.equal(g.any():parse 'hello', 'hello')
+        assert.equal(g.any():parse(42), 42)
         assert.is_nil(g.any():parse(nil))
         local t = { a = 1 }
-        assert.are.equal(t, g.any():parse(t))
+        assert.equal(g.any():parse(t), t)
       end)
     end)
 
     describe('table()', function()
       it('should accept tables', function()
         local t = { 1, 2, 3 }
-        assert.are.equal(t, g.table():parse(t))
-        assert.are.same({}, g.table():parse {})
+        assert.equal(g.table():parse(t), t)
+        assert.deep_equal(g.table():parse {}, {})
       end)
 
       it('should reject non-tables', function()
-        assert.has_error(function() g.table():parse 'table' end)
-        assert.has_error(function() g.table():parse(nil) end)
+        assert.raises(function() g.table():parse 'table' end)
+        assert.raises(function() g.table():parse(nil) end)
       end)
     end)
 
     describe('func()', function()
       it('should accept functions', function()
         local f = function() end
-        assert.are.equal(f, g.func():parse(f))
+        assert.equal(g.func():parse(f), f)
       end)
 
       it('should reject non-functions', function()
-        assert.has_error(function() g.func():parse 'function' end)
-        assert.has_error(function() g.func():parse {} end)
+        assert.raises(function() g.func():parse 'function' end)
+        assert.raises(function() g.func():parse {} end)
       end)
     end)
 
     describe('userdata()', function()
       it('should accept userdata', function()
         local handle = vim.uv.new_timer()
-        assert.are.equal(handle, g.userdata():parse(handle))
+        assert.equal(g.userdata():parse(handle), handle)
         handle:close()
       end)
 
       it('should reject non-userdata', function()
-        assert.has_error(function() g.userdata():parse 'userdata' end)
-        assert.has_error(function() g.userdata():parse {} end)
+        assert.raises(function() g.userdata():parse 'userdata' end)
+        assert.raises(function() g.userdata():parse {} end)
       end)
     end)
 
     describe('thread()', function()
       it('should accept coroutines', function()
         local co = coroutine.create(function() end)
-        assert.are.equal(co, g.thread():parse(co))
+        assert.equal(g.thread():parse(co), co)
       end)
 
       it('should reject non-threads', function()
-        assert.has_error(function() g.thread():parse 'thread' end)
-        assert.has_error(function() g.thread():parse {} end)
+        assert.raises(function() g.thread():parse 'thread' end)
+        assert.raises(function() g.thread():parse {} end)
       end)
     end)
   end)
 
   describe('literal()', function()
     it('should match exact values', function()
-      assert.are.equal('foo', g.literal('foo'):parse 'foo')
-      assert.are.equal(42, g.literal(42):parse(42))
-      assert.are.equal(true, g.literal(true):parse(true))
+      assert.equal(g.literal('foo'):parse 'foo', 'foo')
+      assert.equal(g.literal(42):parse(42), 42)
+      assert.equal(g.literal(true):parse(true), true)
     end)
 
     it('should accept multiple literal options', function()
       local status = g.literal('active', 'inactive', 'pending')
-      assert.are.equal('active', status:parse 'active')
-      assert.are.equal('inactive', status:parse 'inactive')
-      assert.are.equal('pending', status:parse 'pending')
+      assert.equal(status:parse 'active', 'active')
+      assert.equal(status:parse 'inactive', 'inactive')
+      assert.equal(status:parse 'pending', 'pending')
     end)
 
     it('should reject non-matching values', function()
-      assert.has_error(function() g.literal('foo'):parse 'bar' end)
-      assert.has_error(function() g.literal(1, 2, 3):parse(4) end)
+      assert.raises(function() g.literal('foo'):parse 'bar' end)
+      assert.raises(function() g.literal(1, 2, 3):parse(4) end)
     end)
   end)
 
   describe('pattern()', function()
     it('should match Lua patterns', function()
-      assert.are.equal('hello', g.pattern('^%a+$'):parse 'hello')
-      assert.are.equal('123', g.pattern('^%d+$'):parse '123')
+      assert.equal(g.pattern('^%a+$'):parse 'hello', 'hello')
+      assert.equal(g.pattern('^%d+$'):parse '123', '123')
     end)
 
     it('should reject non-matching strings', function()
-      assert.has_error(function() g.pattern('^%d+$'):parse 'abc' end)
-      assert.has_error(function() g.pattern('^hello$'):parse 'hello world' end)
+      assert.raises(function() g.pattern('^%d+$'):parse 'abc' end)
+      assert.raises(function() g.pattern('^hello$'):parse 'hello world' end)
     end)
 
     it('should reject non-strings', function()
-      assert.has_error(function() g.pattern('^%d+$'):parse(123) end)
+      assert.raises(function() g.pattern('^%d+$'):parse(123) end)
     end)
   end)
 
@@ -199,8 +190,8 @@ describe('guard', function()
         age = g.number(),
       }
       local result = User:parse { name = 'Alice', age = 30 }
-      assert.are.equal('Alice', result.name)
-      assert.are.equal(30, result.age)
+      assert.equal(result.name, 'Alice')
+      assert.equal(result.age, 30)
     end)
 
     it('should allow extra keys by default (passthrough)', function()
@@ -208,21 +199,21 @@ describe('guard', function()
         name = g.string(),
       }
       local result = User:parse { name = 'Alice', extra = 'value' }
-      assert.are.equal('Alice', result.name)
-      assert.are.equal('value', result.extra)
+      assert.equal(result.name, 'Alice')
+      assert.equal(result.extra, 'value')
     end)
 
     it('should reject extra keys in strict mode', function()
       local User = g.object({
         name = g.string(),
       }, { strict = true })
-      assert.has_error(function() User:parse { name = 'Alice', extra = 'value' } end)
+      assert.raises(function() User:parse { name = 'Alice', extra = 'value' } end)
     end)
 
     it('should reject non-tables', function()
       local User = g.object { name = g.string() }
-      assert.has_error(function() User:parse 'not a table' end)
-      assert.has_error(function() User:parse(nil) end)
+      assert.raises(function() User:parse 'not a table' end)
+      assert.raises(function() User:parse(nil) end)
     end)
 
     it('should report nested errors', function()
@@ -231,9 +222,9 @@ describe('guard', function()
         age = g.number(),
       }
       local ok, err = pcall(function() User:parse { name = 123, age = 'thirty' } end)
-      assert.is_false(ok)
-      assert.matches('name', tostring(err))
-      assert.matches('age', tostring(err))
+      assert.equal(ok, false)
+      assert.matches(tostring(err), 'name')
+      assert.matches(tostring(err), 'age')
     end)
 
     it('should handle nested objects', function()
@@ -249,13 +240,13 @@ describe('guard', function()
         name = 'Alice',
         address = { city = 'NYC', zip = '10001' },
       }
-      assert.are.equal('NYC', result.address.city)
+      assert.equal(result.address.city, 'NYC')
     end)
 
     it('should reject missing required fields', function()
       local User = g.object { name = g.string() }
-      assert.has_error(function() User:parse {} end)
-      assert.has_error(function() User:parse { name = nil } end)
+      assert.raises(function() User:parse {} end)
+      assert.raises(function() User:parse { name = nil } end)
     end)
   end)
 
@@ -263,23 +254,23 @@ describe('guard', function()
     it('should validate uniform key/value types', function()
       local StringToNumber = g.record(g.string(), g.number())
       local result = StringToNumber:parse { a = 1, b = 2, c = 3 }
-      assert.are.equal(1, result.a)
-      assert.are.equal(2, result.b)
-      assert.are.equal(3, result.c)
+      assert.equal(result.a, 1)
+      assert.equal(result.b, 2)
+      assert.equal(result.c, 3)
     end)
 
     it('should reject invalid values', function()
       local StringToNumber = g.record(g.string(), g.number())
-      assert.has_error(function() StringToNumber:parse { a = 'not a number' } end)
+      assert.raises(function() StringToNumber:parse { a = 'not a number' } end)
     end)
 
     it('should report the key and its problem when a key fails', function()
       local StringToNumber = g.record(g.string(), g.number())
       local result = StringToNumber:try_parse { [1] = 10 }
-      assert.is_false(result.ok)
+      assert.equal(result.ok, false)
       local msg = g.ParseError.new(result.actual, result.problems):format(false)
-      assert.is_truthy(msg:find('[key "1"]', 1, true), msg)
-      assert.is_truthy(msg:find('Expected string', 1, true), msg)
+      assert.ok(msg:find('[key "1"]', 1, true), msg)
+      assert.ok(msg:find('Expected string', 1, true), msg)
     end)
   end)
 
@@ -287,48 +278,48 @@ describe('guard', function()
     it('should validate array items', function()
       local Numbers = g.array(g.number())
       local result = Numbers:parse { 1, 2, 3 }
-      assert.are.same({ 1, 2, 3 }, result)
+      assert.deep_equal(result, { 1, 2, 3 })
     end)
 
     it('should work with guard:array() method', function()
       local Strings = g.string():array()
       local result = Strings:parse { 'a', 'b', 'c' }
-      assert.are.same({ 'a', 'b', 'c' }, result)
+      assert.deep_equal(result, { 'a', 'b', 'c' })
     end)
 
     it('should reject invalid items', function()
       local Numbers = g.array(g.number())
-      assert.has_error(function() Numbers:parse { 1, 'two', 3 } end)
+      assert.raises(function() Numbers:parse { 1, 'two', 3 } end)
     end)
 
     it('should handle empty arrays', function()
       local Numbers = g.array(g.number())
-      assert.are.same({}, Numbers:parse {})
+      assert.deep_equal(Numbers:parse {}, {})
     end)
 
     it('should report index in error', function()
       local Numbers = g.array(g.number())
       local ok, err = pcall(function() Numbers:parse { 1, 2, 'three' } end)
-      assert.is_false(ok)
-      assert.matches('%[3%]', tostring(err))
+      assert.equal(ok, false)
+      assert.matches(tostring(err), '%[3%]')
     end)
 
     it('should coerce nil to empty array with from_nil option', function()
       local Numbers = g.number():array { from_nil = true }
-      assert.are.same({}, Numbers:parse(nil))
+      assert.deep_equal(Numbers:parse(nil), {})
     end)
   end)
 
   describe('array_nonempty()', function()
     it('should accept non-empty arrays', function()
       local Numbers = g.number():array_nonempty()
-      assert.are.same({ 1 }, Numbers:parse { 1 })
-      assert.are.same({ 1, 2, 3 }, Numbers:parse { 1, 2, 3 })
+      assert.deep_equal(Numbers:parse { 1 }, { 1 })
+      assert.deep_equal(Numbers:parse { 1, 2, 3 }, { 1, 2, 3 })
     end)
 
     it('should reject empty arrays', function()
       local Numbers = g.number():array_nonempty()
-      assert.has_error(function() Numbers:parse {} end)
+      assert.raises(function() Numbers:parse {} end)
     end)
   end)
 
@@ -336,47 +327,47 @@ describe('guard', function()
     it('should validate fixed-length tuples', function()
       local Point = g.tuple(g.number(), g.number())
       local result = Point:parse { 10, 20 }
-      assert.are.equal(10, result[1])
-      assert.are.equal(20, result[2])
+      assert.equal(result[1], 10)
+      assert.equal(result[2], 20)
     end)
 
     it('should validate mixed-type tuples', function()
       local Entry = g.tuple(g.string(), g.number(), g.boolean())
       local result = Entry:parse { 'key', 42, true }
-      assert.are.equal('key', result[1])
-      assert.are.equal(42, result[2])
-      assert.are.equal(true, result[3])
+      assert.equal(result[1], 'key')
+      assert.equal(result[2], 42)
+      assert.equal(result[3], true)
     end)
 
     it('should reject wrong length', function()
       local Point = g.tuple(g.number(), g.number())
-      assert.has_error(function() Point:parse { 1 } end)
-      assert.has_error(function() Point:parse { 1, 2, 3 } end)
+      assert.raises(function() Point:parse { 1 } end)
+      assert.raises(function() Point:parse { 1, 2, 3 } end)
     end)
 
     it('should reject wrong types', function()
       local Point = g.tuple(g.number(), g.number())
-      assert.has_error(function() Point:parse { 1, 'two' } end)
+      assert.raises(function() Point:parse { 1, 'two' } end)
     end)
   end)
 
   describe('one_of()', function()
     it('should accept any matching guard', function()
       local StringOrNumber = g.one_of(g.string(), g.number())
-      assert.are.equal('hello', StringOrNumber:parse 'hello')
-      assert.are.equal(42, StringOrNumber:parse(42))
+      assert.equal(StringOrNumber:parse 'hello', 'hello')
+      assert.equal(StringOrNumber:parse(42), 42)
     end)
 
     it('should reject if none match', function()
       local StringOrNumber = g.one_of(g.string(), g.number())
-      assert.has_error(function() StringOrNumber:parse(true) end)
-      assert.has_error(function() StringOrNumber:parse {} end)
+      assert.raises(function() StringOrNumber:parse(true) end)
+      assert.raises(function() StringOrNumber:parse {} end)
     end)
 
     it('should work with or_() method', function()
       local StringOrNumber = g.string():or_(g.number())
-      assert.are.equal('hello', StringOrNumber:parse 'hello')
-      assert.are.equal(42, StringOrNumber:parse(42))
+      assert.equal(StringOrNumber:parse 'hello', 'hello')
+      assert.equal(StringOrNumber:parse(42), 42)
     end)
   end)
 
@@ -387,8 +378,8 @@ describe('guard', function()
       local Person = g.all_of(HasName, HasAge)
 
       local result = Person:parse { name = 'Alice', age = 30 }
-      assert.are.equal('Alice', result.name)
-      assert.are.equal(30, result.age)
+      assert.equal(result.name, 'Alice')
+      assert.equal(result.age, 30)
     end)
 
     it('should reject if any guard fails', function()
@@ -396,7 +387,7 @@ describe('guard', function()
       local HasAge = g.object { age = g.number() }
       local Person = g.all_of(HasName, HasAge)
 
-      assert.has_error(function()
+      assert.raises(function()
         Person:parse { name = 'Alice' } -- missing age
       end)
     end)
@@ -407,7 +398,7 @@ describe('guard', function()
       local Person = HasName:and_(HasAge)
 
       local result = Person:parse { name = 'Alice', age = 30 }
-      assert.are.equal('Alice', result.name)
+      assert.equal(result.name, 'Alice')
     end)
   end)
 
@@ -415,58 +406,55 @@ describe('guard', function()
     it('should accept values with the metatable', function()
       local Point = {}
       local point = setmetatable({ x = 1, y = 2 }, Point)
-      assert.are.equal(point, g.instance_of(Point, 'Point'):parse(point))
+      assert.equal(g.instance_of(Point, 'Point'):parse(point), point)
     end)
 
     it('should reject tables with another metatable', function()
       local Point = {}
-      assert.has_error(function() g.instance_of(Point, 'Point'):parse {} end)
-      assert.has_error(function() g.instance_of(Point, 'Point'):parse(setmetatable({}, {})) end)
+      assert.raises(function() g.instance_of(Point, 'Point'):parse {} end)
+      assert.raises(function() g.instance_of(Point, 'Point'):parse(setmetatable({}, {})) end)
     end)
 
     it('should reject non-tables', function()
-      assert.has_error(function() g.instance_of({}, 'Point'):parse 'Point' end)
+      assert.raises(function() g.instance_of({}, 'Point'):parse 'Point' end)
     end)
 
     it('should name the metatable and the generic fallback in errors', function()
       local Point = {}
       local named = g.instance_of(Point, 'Point'):try_parse {}
       local named_msg = g.ParseError.new(named.actual, named.problems):format(false)
-      assert.is_truthy(named_msg:find('Expected instance of Point', 1, true), named_msg)
+      assert.ok(named_msg:find('Expected instance of Point', 1, true), named_msg)
 
       local unnamed = g.instance_of(Point):try_parse {}
       local unnamed_msg = g.ParseError.new(unnamed.actual, unnamed.problems):format(false)
-      assert.is_truthy(
-        unnamed_msg:find('Expected instance of specific metatable', 1, true),
-        unnamed_msg
-      )
+      assert.ok(unnamed_msg:find('Expected instance of specific metatable', 1, true), unnamed_msg)
     end)
   end)
 
   describe('optional()', function()
     it('should allow nil', function()
       local MaybeString = g.string():optional()
-      assert.are.equal('hello', MaybeString:parse 'hello')
+      assert.equal(MaybeString:parse 'hello', 'hello')
       assert.is_nil(MaybeString:parse(nil))
     end)
 
     it('should still reject wrong types', function()
       local MaybeString = g.string():optional()
-      assert.has_error(function() MaybeString:parse(123) end)
+      assert.raises(function() MaybeString:parse(123) end)
     end)
   end)
 
   describe('map()', function()
     it('should transform the value', function()
       local Doubled = g.number():map(function(x) return g.ok(x * 2) end)
-      assert.are.equal(84, Doubled:parse(42))
+      assert.equal(Doubled:parse(42), 84)
     end)
 
     it('should chain transformations', function()
       local Processed = g.string()
         :map(function(s) return g.ok(s:upper()) end)
         :map(function(s) return g.ok(s .. '!') end)
-      assert.are.equal('HELLO!', Processed:parse 'hello')
+      assert.equal(Processed:parse 'hello', 'HELLO!')
     end)
 
     it('should allow returning errors', function()
@@ -474,65 +462,65 @@ describe('guard', function()
         if x <= 0 then return g.err(x, { { path = {}, message = 'Must be positive' } }) end
         return g.ok(x)
       end)
-      assert.are.equal(42, Positive:parse(42))
-      assert.has_error(function() Positive:parse(-1) end)
+      assert.equal(Positive:parse(42), 42)
+      assert.raises(function() Positive:parse(-1) end)
     end)
   end)
 
   describe('invariant()', function()
     it('should pass when predicate is true', function()
       local Positive = g.number():invariant(function(x) return x > 0 end, 'Must be positive')
-      assert.are.equal(42, Positive:parse(42))
+      assert.equal(Positive:parse(42), 42)
     end)
 
     it('should fail when predicate is false', function()
       local Positive = g.number():invariant(function(x) return x > 0 end, 'Must be positive')
-      assert.has_error(function() Positive:parse(-1) end)
+      assert.raises(function() Positive:parse(-1) end)
     end)
   end)
 
   describe('into_number()', function()
     it('should pass through numbers', function()
-      assert.are.equal(42, g.into_number():parse(42))
-      assert.are.equal(3.14, g.into_number():parse(3.14))
+      assert.equal(g.into_number():parse(42), 42)
+      assert.equal(g.into_number():parse(3.14), 3.14)
     end)
 
     it('should parse numeric strings', function()
-      assert.are.equal(42, g.into_number():parse '42')
-      assert.are.equal(3.14, g.into_number():parse '3.14')
-      assert.are.equal(-100, g.into_number():parse '-100')
+      assert.equal(g.into_number():parse '42', 42)
+      assert.equal(g.into_number():parse '3.14', 3.14)
+      assert.equal(g.into_number():parse '-100', -100)
     end)
 
     it('should reject non-numeric strings', function()
-      assert.has_error(function() g.into_number():parse 'hello' end)
-      assert.has_error(function() g.into_number():parse '' end)
+      assert.raises(function() g.into_number():parse 'hello' end)
+      assert.raises(function() g.into_number():parse '' end)
     end)
 
     it('should reject other types', function()
-      assert.has_error(function() g.into_number():parse(true) end)
-      assert.has_error(function() g.into_number():parse {} end)
+      assert.raises(function() g.into_number():parse(true) end)
+      assert.raises(function() g.into_number():parse {} end)
     end)
   end)
 
   describe('into_string()', function()
     it(
       'should pass through strings',
-      function() assert.are.equal('hello', g.into_string():parse 'hello') end
+      function() assert.equal(g.into_string():parse 'hello', 'hello') end
     )
 
     it('should convert numbers to strings', function()
-      assert.are.equal('42', g.into_string():parse(42))
-      assert.are.equal('3.14', g.into_string():parse(3.14))
+      assert.equal(g.into_string():parse(42), '42')
+      assert.equal(g.into_string():parse(3.14), '3.14')
     end)
 
     it('should convert booleans to strings', function()
-      assert.are.equal('true', g.into_string():parse(true))
-      assert.are.equal('false', g.into_string():parse(false))
+      assert.equal(g.into_string():parse(true), 'true')
+      assert.equal(g.into_string():parse(false), 'false')
     end)
 
     it('should reject values with no string form', function()
-      assert.has_error(function() g.into_string():parse {} end)
-      assert.has_error(function()
+      assert.raises(function() g.into_string():parse {} end)
+      assert.raises(function()
         g.into_string():parse(function() end)
       end)
     end)
@@ -540,38 +528,38 @@ describe('guard', function()
 
   describe('into_boolean()', function()
     it('should pass through booleans', function()
-      assert.are.equal(true, g.into_boolean():parse(true))
-      assert.are.equal(false, g.into_boolean():parse(false))
+      assert.equal(g.into_boolean():parse(true), true)
+      assert.equal(g.into_boolean():parse(false), false)
     end)
 
     it('should parse truthy strings', function()
-      assert.are.equal(true, g.into_boolean():parse 'true')
-      assert.are.equal(true, g.into_boolean():parse 'TRUE')
-      assert.are.equal(true, g.into_boolean():parse '1')
-      assert.are.equal(true, g.into_boolean():parse 'yes')
+      assert.equal(g.into_boolean():parse 'true', true)
+      assert.equal(g.into_boolean():parse 'TRUE', true)
+      assert.equal(g.into_boolean():parse '1', true)
+      assert.equal(g.into_boolean():parse 'yes', true)
     end)
 
     it('should parse falsy strings', function()
-      assert.are.equal(false, g.into_boolean():parse 'false')
-      assert.are.equal(false, g.into_boolean():parse 'FALSE')
-      assert.are.equal(false, g.into_boolean():parse '0')
-      assert.are.equal(false, g.into_boolean():parse 'no')
-      assert.are.equal(false, g.into_boolean():parse '')
+      assert.equal(g.into_boolean():parse 'false', false)
+      assert.equal(g.into_boolean():parse 'FALSE', false)
+      assert.equal(g.into_boolean():parse '0', false)
+      assert.equal(g.into_boolean():parse 'no', false)
+      assert.equal(g.into_boolean():parse '', false)
     end)
 
     it('should convert numbers to booleans', function()
-      assert.are.equal(true, g.into_boolean():parse(1))
-      assert.are.equal(true, g.into_boolean():parse(-1))
-      assert.are.equal(false, g.into_boolean():parse(0))
+      assert.equal(g.into_boolean():parse(1), true)
+      assert.equal(g.into_boolean():parse(-1), true)
+      assert.equal(g.into_boolean():parse(0), false)
     end)
 
     it('should reject strings that are not boolean words', function()
-      assert.has_error(function() g.into_boolean():parse 'maybe' end)
+      assert.raises(function() g.into_boolean():parse 'maybe' end)
     end)
 
     it('should reject values with no boolean form', function()
-      assert.has_error(function() g.into_boolean():parse {} end)
-      assert.has_error(function()
+      assert.raises(function() g.into_boolean():parse {} end)
+      assert.raises(function()
         g.into_boolean():parse(function() end)
       end)
     end)
@@ -584,19 +572,19 @@ describe('guard', function()
         value = g.number(),
       })
       local result = JsonObject:parse '{"name":"test","value":42}'
-      assert.are.equal('test', result.name)
-      assert.are.equal(42, result.value)
+      assert.equal(result.name, 'test')
+      assert.equal(result.value, 42)
     end)
 
     it('should reject invalid JSON', function()
       local JsonObject = g.from_json(g.any())
-      assert.has_error(function() JsonObject:parse 'not valid json' end)
+      assert.raises(function() JsonObject:parse 'not valid json' end)
     end)
 
     it('should validate parsed JSON against guard', function()
       local JsonNumber = g.from_json(g.number())
-      assert.are.equal(42, JsonNumber:parse '42')
-      assert.has_error(function() JsonNumber:parse '"not a number"' end)
+      assert.equal(JsonNumber:parse '42', 42)
+      assert.raises(function() JsonNumber:parse '"not a number"' end)
     end)
   end)
 
@@ -605,18 +593,18 @@ describe('guard', function()
       local result = g.into_json():parse { name = 'test', value = 42 }
       -- Decode to verify (order may vary)
       local decoded = vim.json.decode(result)
-      assert.are.equal('test', decoded.name)
-      assert.are.equal(42, decoded.value)
+      assert.equal(decoded.name, 'test')
+      assert.equal(decoded.value, 42)
     end)
 
     it('should serialize primitives', function()
-      assert.are.equal('42', g.into_json():parse(42))
-      assert.are.equal('"hello"', g.into_json():parse 'hello')
-      assert.are.equal('true', g.into_json():parse(true))
+      assert.equal(g.into_json():parse(42), '42')
+      assert.equal(g.into_json():parse 'hello', '"hello"')
+      assert.equal(g.into_json():parse(true), 'true')
     end)
 
     it('should reject values that JSON cannot serialize', function()
-      assert.has_error(function()
+      assert.raises(function()
         g.into_json():parse(function() end)
       end)
     end)
@@ -646,10 +634,10 @@ describe('guard', function()
         },
       }
 
-      assert.are.equal(123, result.id) -- coerced from string
-      assert.are.equal('alice', result.username)
-      assert.are.same({ 'admin', 'user' }, result.roles)
-      assert.are.equal('dark', result.settings.theme)
+      assert.equal(result.id, 123) -- coerced from string
+      assert.equal(result.username, 'alice')
+      assert.deep_equal(result.roles, { 'admin', 'user' })
+      assert.equal(result.settings.theme, 'dark')
     end)
 
     it('should validate API response', function()
@@ -660,11 +648,11 @@ describe('guard', function()
       }
 
       local success = ApiResponse:parse { status = 'ok', data = { items = {} } }
-      assert.are.equal('ok', success.status)
+      assert.equal(success.status, 'ok')
 
       local failure = ApiResponse:parse { status = 'error', error = 'Not found' }
-      assert.are.equal('error', failure.status)
-      assert.are.equal('Not found', failure.error)
+      assert.equal(failure.status, 'error')
+      assert.equal(failure.error, 'Not found')
     end)
 
     it('should validate config with defaults via map', function()
@@ -681,12 +669,12 @@ describe('guard', function()
       )
 
       local result = Config:parse {}
-      assert.are.equal(8080, result.port)
-      assert.are.equal('localhost', result.host)
+      assert.equal(result.port, 8080)
+      assert.equal(result.host, 'localhost')
 
       local custom = Config:parse { port = '3000' }
-      assert.are.equal(3000, custom.port)
-      assert.are.equal('localhost', custom.host)
+      assert.equal(custom.port, 3000)
+      assert.equal(custom.host, 'localhost')
     end)
   end)
 
@@ -698,25 +686,25 @@ describe('guard', function()
         },
       }
       local result = User:try_parse { profile = { name = 123 } }
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       -- Use ParseError to format with path
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = err:format(false)
       -- Path should show .profile.name
-      assert.matches('%.profile%.name', msg)
-      assert.matches('Expected string', msg)
+      assert.matches(msg, '%.profile%.name')
+      assert.matches(msg, 'Expected string')
     end)
 
     it('should include index for array errors', function()
       local Numbers = g.array(g.number())
       local result = Numbers:try_parse { 1, 2, 'bad', 4 }
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = err:format(false)
-      assert.matches('%[3%]', msg)
-      assert.matches('Expected number', msg)
+      assert.matches(msg, '%[3%]')
+      assert.matches(msg, 'Expected number')
     end)
 
     it('should collect multiple errors', function()
@@ -726,15 +714,15 @@ describe('guard', function()
         email = g.string(),
       }
       local result = User:try_parse { name = 123, age = 'old', email = false }
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = err:format(false)
       -- Should report all 3 problems
-      assert.matches('3 problems', msg)
-      assert.matches('%.name', msg)
-      assert.matches('%.age', msg)
-      assert.matches('%.email', msg)
+      assert.matches(msg, '3 problems')
+      assert.matches(msg, '%.name')
+      assert.matches(msg, '%.age')
+      assert.matches(msg, '%.email')
     end)
 
     it('should show deeply nested paths', function()
@@ -757,46 +745,46 @@ describe('guard', function()
           },
         },
       }
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = err:format(false)
       -- Should show full path: .level1.level2.level3[2].value
-      assert.matches('%.level1%.level2%.level3%[2%]%.value', msg)
+      assert.matches(msg, '%.level1%.level2%.level3%[2%]%.value')
     end)
 
     it('should show actual values in verbose mode', function()
       local guard = g.number()
       local result = guard:try_parse 'not a number'
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local verbose_msg = err:format(true)
-      assert.matches('got:', verbose_msg)
-      assert.matches('not a number', verbose_msg)
+      assert.matches(verbose_msg, 'got:')
+      assert.matches(verbose_msg, 'not a number')
     end)
 
     it('should fall back to tostring when JSON cannot encode the value', function()
       local value = function() end
       local problems = { { path = {}, message = 'Expected number', actual = value } }
       local msg = g.ParseError.new(value, problems):format(true)
-      assert.is_truthy(msg:find('got:', 1, true), msg)
-      assert.is_truthy(msg:find('function:', 1, true), msg)
+      assert.ok(msg:find('got:', 1, true), msg)
+      assert.ok(msg:find('function:', 1, true), msg)
     end)
 
     it('should format ParseError nicely', function()
       local User = g.object { name = g.string() }
       local result = User:try_parse { name = 123 }
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = tostring(err)
       -- Should have header
-      assert.matches('Validation failed', msg)
+      assert.matches(msg, 'Validation failed')
       -- Should have numbered list
-      assert.matches('1%.', msg)
+      assert.matches(msg, '1%.')
       -- Should show path in backticks
-      assert.matches('`%.name`', msg)
+      assert.matches(msg, '`%.name`')
     end)
 
     it('should handle array of objects with multiple errors', function()
@@ -809,95 +797,95 @@ describe('guard', function()
         { name = 123, age = 'old' },
         { name = 'Charlie', age = 25 },
       }
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = err:format(false)
       -- Should report errors for item [2]
-      assert.matches('%[2%]%.name', msg)
-      assert.matches('%[2%]%.age', msg)
+      assert.matches(msg, '%[2%]%.name')
+      assert.matches(msg, '%[2%]%.age')
       -- Should be 2 problems
-      assert.matches('2 problems', msg)
+      assert.matches(msg, '2 problems')
     end)
 
     it('should show pattern in pattern error', function()
       local guard = g.pattern '^%d%d%d%-%d%d%d%d$'
       local result = guard:try_parse 'invalid'
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = err:format(false)
-      assert.matches('pattern', msg)
+      assert.matches(msg, 'pattern')
     end)
 
     it('should show expected literals in literal error', function()
       local guard = g.literal('red', 'green', 'blue')
       local result = guard:try_parse 'yellow'
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
       local err = g.ParseError.new(result.actual, result.problems)
       local msg = err:format(false)
-      assert.matches('red', msg)
-      assert.matches('green', msg)
-      assert.matches('blue', msg)
+      assert.matches(msg, 'red')
+      assert.matches(msg, 'green')
+      assert.matches(msg, 'blue')
     end)
   end)
 
   describe('try_parse()', function()
     it('should return ok result on success', function()
       local result = g.string():try_parse 'hello'
-      assert.is_true(result.ok)
-      assert.are.equal('hello', result.value)
+      assert.equal(result.ok, true)
+      assert.equal(result.value, 'hello')
     end)
 
     it('should return error result on failure', function()
       local result = g.string():try_parse(123)
-      assert.is_false(result.ok)
-      assert.is_not_nil(result.problems)
-      assert.are.equal(1, #result.problems)
+      assert.equal(result.ok, false)
+      assert.not_equal(result.problems, nil)
+      assert.equal(#result.problems, 1)
     end)
   end)
 
   describe('is() vs matches()', function()
     it('is() returns false for coerced values', function()
       -- into_number coerces '42' to 42, so is() should be false
-      assert.is_false(g.into_number():is '42')
+      assert.equal(g.into_number():is '42', false)
       -- but for actual numbers, is() should be true
-      assert.is_true(g.into_number():is(42))
+      assert.equal(g.into_number():is(42), true)
     end)
 
     it('matches() returns true for coercible values', function()
-      assert.is_true(g.into_number():matches '42')
-      assert.is_true(g.into_number():matches(42))
+      assert.equal(g.into_number():matches '42', true)
+      assert.equal(g.into_number():matches(42), true)
     end)
 
     it('is() is stricter than matches()', function()
       local guard = g.into_string()
       -- 42 can be coerced to '42'
-      assert.is_true(guard:matches(42))
+      assert.equal(guard:matches(42), true)
       -- but 42 is not already a string
-      assert.is_false(guard:is(42))
+      assert.equal(guard:is(42), false)
       -- 'hello' is already a string
-      assert.is_true(guard:is 'hello')
+      assert.equal(guard:is 'hello', true)
     end)
   end)
 
   describe('LuaCATS generation', function()
     describe('to_luacats()', function()
       it('should generate alias for primitives', function()
-        assert.are.equal('---@alias MyString string', g.string():to_luacats 'MyString')
-        assert.are.equal('---@alias MyNumber number', g.number():to_luacats 'MyNumber')
-        assert.are.equal('---@alias MyBool boolean', g.boolean():to_luacats 'MyBool')
-        assert.are.equal('---@alias MyInt integer', g.integer():to_luacats 'MyInt')
+        assert.equal(g.string():to_luacats 'MyString', '---@alias MyString string')
+        assert.equal(g.number():to_luacats 'MyNumber', '---@alias MyNumber number')
+        assert.equal(g.boolean():to_luacats 'MyBool', '---@alias MyBool boolean')
+        assert.equal(g.integer():to_luacats 'MyInt', '---@alias MyInt integer')
       end)
 
       it('should generate union for literals', function()
         local status = g.literal('active', 'inactive', 'pending')
         local result = status:to_luacats 'Status'
-        assert.matches("'active'", result)
-        assert.matches("'inactive'", result)
-        assert.matches("'pending'", result)
-        assert.matches('|', result)
+        assert.matches(result, "'active'")
+        assert.matches(result, "'inactive'")
+        assert.matches(result, "'pending'")
+        assert.matches(result, '|')
       end)
 
       it('should generate class for objects', function()
@@ -906,9 +894,9 @@ describe('guard', function()
           age = g.number(),
         }
         local result = User:to_luacats 'User'
-        assert.matches('---@class User', result)
-        assert.matches('---@field name string', result)
-        assert.matches('---@field age number', result)
+        assert.matches(result, '---@class User')
+        assert.matches(result, '---@field name string')
+        assert.matches(result, '---@field age number')
       end)
 
       it('should mark optional fields with ?', function()
@@ -917,15 +905,15 @@ describe('guard', function()
           nickname = g.string():optional(),
         }
         local result = User:to_luacats 'User'
-        assert.matches('---@field name string', result)
-        assert.matches('---@field nickname%? string', result)
+        assert.matches(result, '---@field name string')
+        assert.matches(result, '---@field nickname%? string')
         -- Ensure we don't have double ? (the old bug)
         assert.is_nil(result:match 'string%?')
       end)
 
       it('should generate array types', function()
         local Numbers = g.array(g.number())
-        assert.are.equal('---@alias Numbers number[]', Numbers:to_luacats 'Numbers')
+        assert.equal(Numbers:to_luacats 'Numbers', '---@alias Numbers number[]')
       end)
 
       it('should generate nested class for nested objects', function()
@@ -936,27 +924,27 @@ describe('guard', function()
         }
         local result = User:to_luacats 'User'
         -- Should have both classes
-        assert.matches('---@class User', result)
-        assert.matches('---@class User_profile', result)
-        assert.matches('---@field bio string', result)
+        assert.matches(result, '---@class User')
+        assert.matches(result, '---@class User_profile')
+        assert.matches(result, '---@field bio string')
       end)
 
       it('should generate record types', function()
         local StringMap = g.record(g.string(), g.number())
         local result = StringMap:to_luacats 'StringMap'
-        assert.matches('table<string, number>', result)
+        assert.matches(result, 'table<string, number>')
       end)
 
       it('should generate union for one_of', function()
         local StringOrNumber = g.one_of(g.string(), g.number())
         local result = StringOrNumber:to_luacats 'StringOrNumber'
-        assert.matches('string|number', result)
+        assert.matches(result, 'string|number')
       end)
 
       it('should generate tuple types', function()
         local Point = g.tuple(g.number(), g.number())
         local result = Point:to_luacats 'Point'
-        assert.matches('%[number, number%]', result)
+        assert.matches(result, '%[number, number%]')
       end)
 
       it('should handle complex nested structures', function()
@@ -972,98 +960,98 @@ describe('guard', function()
         local result = ApiResponse:to_luacats 'ApiResponse'
 
         -- Should have all classes
-        assert.matches('---@class ApiResponse', result)
-        assert.matches("'ok'|'error'", result)
-        assert.matches('---@field items', result)
+        assert.matches(result, '---@class ApiResponse')
+        assert.matches(result, "'ok'|'error'")
+        assert.matches(result, '---@field items')
       end)
     end)
 
     describe('infer_type()', function()
       it('should return type string for primitives', function()
-        assert.are.equal('string', g.string():infer_type())
-        assert.are.equal('number', g.number():infer_type())
-        assert.are.equal('boolean', g.boolean():infer_type())
-        assert.are.equal('integer', g.integer():infer_type())
-        assert.are.equal('table', g.table():infer_type())
-        assert.are.equal('function', g.func():infer_type())
-        assert.are.equal('userdata', g.userdata():infer_type())
-        assert.are.equal('thread', g.thread():infer_type())
-        assert.are.equal('any', g.any():infer_type())
-        assert.are.equal('nil', g.nil_():infer_type())
+        assert.equal(g.string():infer_type(), 'string')
+        assert.equal(g.number():infer_type(), 'number')
+        assert.equal(g.boolean():infer_type(), 'boolean')
+        assert.equal(g.integer():infer_type(), 'integer')
+        assert.equal(g.table():infer_type(), 'table')
+        assert.equal(g.func():infer_type(), 'function')
+        assert.equal(g.userdata():infer_type(), 'userdata')
+        assert.equal(g.thread():infer_type(), 'thread')
+        assert.equal(g.any():infer_type(), 'any')
+        assert.equal(g.nil_():infer_type(), 'nil')
       end)
 
       it('should return array notation for arrays', function()
-        assert.are.equal('string[]', g.string():array():infer_type())
-        assert.are.equal('number[]', g.number():array():infer_type())
+        assert.equal(g.string():array():infer_type(), 'string[]')
+        assert.equal(g.number():array():infer_type(), 'number[]')
       end)
 
       it(
         'should return optional notation',
-        function() assert.are.equal('string?', g.string():optional():infer_type()) end
+        function() assert.equal(g.string():optional():infer_type(), 'string?') end
       )
 
       it('should preserve type through invariant', function()
         local Positive = g.number():invariant(function(x) return x > 0 end, 'Must be positive')
-        assert.are.equal('number', Positive:infer_type())
+        assert.equal(Positive:infer_type(), 'number')
       end)
 
       it('should preserve the inner type through map', function()
         local Doubled = g.number():map(function(x) return g.ok(x * 2) end)
-        assert.are.equal('number', Doubled:infer_type())
+        assert.equal(Doubled:infer_type(), 'number')
       end)
 
       it('should use the first guard for all_of', function()
-        assert.are.equal('string', g.all_of(g.string(), g.pattern '^x'):infer_type())
-        assert.are.equal('any', g.all_of():infer_type())
+        assert.equal(g.all_of(g.string(), g.pattern '^x'):infer_type(), 'string')
+        assert.equal(g.all_of():infer_type(), 'any')
       end)
 
       it('should name instance_of types', function()
         local Point = {}
-        assert.are.equal('Point', g.instance_of(Point, 'Point'):infer_type())
-        assert.are.equal('specific metatable', g.instance_of(Point):infer_type())
+        assert.equal(g.instance_of(Point, 'Point'):infer_type(), 'Point')
+        assert.equal(g.instance_of(Point):infer_type(), 'specific metatable')
       end)
 
       it(
         'should infer literal unions and fall back to any for other values',
-        function() assert.are.equal('1|true|any', g.literal(1, true, {}):infer_type()) end
+        function() assert.equal(g.literal(1, true, {}):infer_type(), '1|true|any') end
       )
 
       it('should fall back to any when a schema has no inferable metadata', function()
         local function opaque(schema)
           return g.Guard.new(schema, function(x) return g.ok(x) end)
         end
-        assert.are.equal('any?', opaque({ type = 'optional' }):infer_type())
-        assert.are.equal('any[]', opaque({ type = 'array' }):infer_type())
-        assert.are.equal('any', opaque({ type = 'map' }):infer_type())
-        assert.are.equal('any', opaque({ type = 'custom' }):infer_type())
-        assert.are.equal('any', opaque({ type = 'unknown' }):infer_type())
+        assert.equal(opaque({ type = 'optional' }):infer_type(), 'any?')
+        assert.equal(opaque({ type = 'array' }):infer_type(), 'any[]')
+        assert.equal(opaque({ type = 'map' }):infer_type(), 'any')
+        assert.equal(opaque({ type = 'custom' }):infer_type(), 'any')
+        assert.equal(opaque({ type = 'unknown' }):infer_type(), 'any')
       end)
     end)
 
     describe('_schema metadata', function()
       it('should be present on primitives', function()
-        assert.are.equal('string', g.string()._schema.type)
-        assert.are.equal('number', g.number()._schema.type)
-        assert.are.equal('boolean', g.boolean()._schema.type)
+        assert.equal(g.string()._schema.type, 'string')
+        assert.equal(g.number()._schema.type, 'number')
+        assert.equal(g.boolean()._schema.type, 'boolean')
       end)
 
       it('should be present on composites', function()
         local obj = g.object { name = g.string() }
-        assert.are.equal('object', obj._schema.type)
-        assert.is_not_nil(obj._schema.fields)
-        assert.is_not_nil(obj._schema.fields.name)
+        assert.equal(obj._schema.type, 'object')
+        assert.not_equal(obj._schema.fields, nil)
+        assert.not_equal(obj._schema.fields.name, nil)
       end)
 
       it('should be present on arrays', function()
         local arr = g.string():array()
-        assert.are.equal('array', arr._schema.type)
-        assert.is_not_nil(arr._schema.item_guard)
+        assert.equal(arr._schema.type, 'array')
+        assert.not_equal(arr._schema.item_guard, nil)
       end)
 
       it('should store literal values', function()
         local lit = g.literal('a', 'b', 'c')
-        assert.are.equal('literal', lit._schema.type)
-        assert.are.same({ 'a', 'b', 'c' }, lit._schema.values)
+        assert.equal(lit._schema.type, 'literal')
+        assert.deep_equal(lit._schema.values, { 'a', 'b', 'c' })
       end)
     end)
   end)
@@ -1110,22 +1098,7 @@ end
 --- @param argv string[]
 --- @return vim.SystemCompleted
 local function cli(argv)
-  local cmd = { 'nvim', '--clean' }
-  -- Under `busted --coverage`, instrument the child so its CLI lines count.
-  if package.loaded['luacov.runner'] then
-    cmd[#cmd + 1] = '--cmd'
-    cmd[#cmd + 1] = 'lua require("luacov")'
-    -- The child runs too few instrumented lines to reach luacov's tick
-    -- interval, and Neovim does not exit through Lua's os.exit, so save at the
-    -- event Neovim does emit.
-    cmd[#cmd + 1] = '--cmd'
-    cmd[#cmd + 1] = 'autocmd VimLeavePre * lua require("luacov.runner").save_stats()'
-  end
-  cmd[#cmd + 1] = '-l'
-  -- Keep this relative. luacov keys stats by the path string a chunk was loaded
-  -- from, so the parent's relative `lua/guard.lua` and the child's absolute path
-  -- would appear as two files in the coverage report.
-  cmd[#cmd + 1] = 'lua/guard.lua'
+  local cmd = { 'nvim', '--clean', '-l', 'lua/guard.lua' }
   for _, arg in ipairs(argv) do
     cmd[#cmd + 1] = arg
   end
@@ -1136,7 +1109,7 @@ end
 --- @return vim.SystemCompleted
 local function run_ok(argv)
   local proc = cli(argv)
-  assert.are.equal(0, proc.code, proc.stderr)
+  assert.equal(proc.code, 0, proc.stderr)
   return proc
 end
 
@@ -1144,12 +1117,9 @@ end
 --- @param pattern string
 local function run_fail(argv, pattern)
   local proc = cli(argv)
-  assert.are.equal(1, proc.code, proc.stdout)
+  assert.equal(proc.code, 1, proc.stdout)
   local stderr = proc.stderr or ''
-  assert.is_truthy(
-    stderr:find(pattern, 1, true),
-    ('expected %q in error %q'):format(pattern, stderr)
-  )
+  assert.ok(stderr:find(pattern, 1, true), ('expected %q in error %q'):format(pattern, stderr))
   return proc
 end
 
@@ -1199,8 +1169,8 @@ describe('guard CLI', function()
       for _, flag in ipairs { '--help', '-h' } do
         local proc = run_ok { flag }
         local stdout = proc.stdout or ''
-        assert.is_truthy(stdout:find('Usage: guard', 1, true), stdout)
-        assert.is_truthy(stdout:find('--module', 1, true), stdout)
+        assert.ok(stdout:find('Usage: guard', 1, true), stdout)
+        assert.ok(stdout:find('--module', 1, true), stdout)
       end
     end)
 
@@ -1208,7 +1178,7 @@ describe('guard CLI', function()
       for _, flag in ipairs { '--version', '-V' } do
         local proc = run_ok { flag }
         local stdout = proc.stdout or ''
-        assert.is_truthy(stdout:match '^guard %d+%.%d+%.%d+ %(Neovim %d+%.%d+%.%d+', stdout)
+        assert.ok(stdout:match '^guard %d+%.%d+%.%d+ %(Neovim %d+%.%d+%.%d+', stdout)
       end
     end)
 
@@ -1221,7 +1191,7 @@ describe('guard CLI', function()
         root .. '/lua/schemas.lua',
       }
       local generated = slurp(types_path(root .. '/lua/schemas.lua'))
-      assert.is_truthy(generated:find('---@alias schemas.Answer integer', 1, true), generated)
+      assert.ok(generated:find('---@alias schemas.Answer integer', 1, true), generated)
     end)
   end)
 
@@ -1231,16 +1201,16 @@ describe('guard CLI', function()
       local src = root .. '/lua/schemas.lua'
       local proc = run_ok { src }
 
-      assert.is_truthy(
+      assert.ok(
         (proc.stdout or ''):find('Generated: ' .. types_path(src) .. ' (2 types)', 1, true),
         proc.stdout
       )
 
       local generated = slurp(types_path(src))
-      assert.is_truthy(generated:find('---@class schemas.api.User', 1, true), generated)
-      assert.is_truthy(generated:find('---@field name string', 1, true), generated)
-      assert.is_truthy(generated:find('---@field age? number', 1, true), generated)
-      assert.is_truthy(generated:find("---@alias schemas.Status 'ok'|'error'", 1, true), generated)
+      assert.ok(generated:find('---@class schemas.api.User', 1, true), generated)
+      assert.ok(generated:find('---@field name string', 1, true), generated)
+      assert.ok(generated:find('---@field age? number', 1, true), generated)
+      assert.ok(generated:find("---@alias schemas.Status 'ok'|'error'", 1, true), generated)
     end)
 
     it('records the regeneration command in the header', function()
@@ -1249,8 +1219,8 @@ describe('guard CLI', function()
       run_ok { src }
 
       local generated = slurp(types_path(src))
-      assert.is_truthy(generated:find('-- To regenerate, run: nvim -l ', 1, true), generated)
-      assert.is_truthy(generated:find(src, 1, true), generated)
+      assert.ok(generated:find('-- To regenerate, run: nvim -l ', 1, true), generated)
+      assert.ok(generated:find(src, 1, true), generated)
     end)
 
     it('records a custom module in the regeneration command', function()
@@ -1261,7 +1231,7 @@ describe('guard CLI', function()
       run_ok { '--module', 'custom.guard', src }
 
       local generated = slurp(types_path(src))
-      assert.is_truthy(generated:find('--module custom.guard', 1, true), generated)
+      assert.ok(generated:find('--module custom.guard', 1, true), generated)
     end)
 
     it('injects every requested module name', function()
@@ -1279,8 +1249,8 @@ describe('guard CLI', function()
       run_ok { '--module', 'guard', '--module', 'my.guard', src }
 
       local generated = slurp(types_path(src))
-      assert.is_truthy(generated:find('---@alias schemas.A string', 1, true), generated)
-      assert.is_truthy(generated:find('---@alias schemas.B number', 1, true), generated)
+      assert.ok(generated:find('---@alias schemas.A string', 1, true), generated)
+      assert.ok(generated:find('---@alias schemas.B number', 1, true), generated)
     end)
 
     it('emits a reused schema once and references it elsewhere', function()
@@ -1296,8 +1266,8 @@ describe('guard CLI', function()
       local generated = slurp(types_path(root .. '/lua/schemas.lua'))
       local _, classes = generated:gsub('%-%-%-@class ', '')
       local _, aliases = generated:gsub('%-%-%-@alias ', '')
-      assert.are.equal(1, classes)
-      assert.are.equal(1, aliases)
+      assert.equal(classes, 1)
+      assert.equal(aliases, 1)
     end)
 
     it('expands a glob and skips existing .types.lua files', function()
@@ -1308,19 +1278,15 @@ describe('guard CLI', function()
       }
       run_ok { root .. '/lua/*.lua' }
 
-      assert.is_truthy(
-        slurp(types_path(root .. '/lua/a.lua')):find('---@alias a.A string', 1, true)
-      )
-      assert.is_truthy(
-        slurp(types_path(root .. '/lua/b.lua')):find('---@alias b.B number', 1, true)
-      )
-      assert.are.equal('-- sentinel\n', slurp(root .. '/lua/c.types.lua'))
+      assert.ok((slurp(types_path(root .. '/lua/a.lua')):find('---@alias a.A string', 1, true)))
+      assert.ok((slurp(types_path(root .. '/lua/b.lua')):find('---@alias b.B number', 1, true)))
+      assert.equal(slurp(root .. '/lua/c.types.lua'), '-- sentinel\n')
     end)
 
     it('skips a file that exports no table', function()
       local root = fixture { ['lua/plain.lua'] = 'return 1\n' }
       local proc = run_ok { root .. '/lua/plain.lua' }
-      assert.is_truthy((proc.stdout or ''):find('no table exported', 1, true), proc.stdout)
+      assert.ok((proc.stdout or ''):find('no table exported', 1, true), proc.stdout)
       assert.is_nil(vim.uv.fs_stat(types_path(root .. '/lua/plain.lua')))
     end)
   end)
