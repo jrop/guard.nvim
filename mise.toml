@@ -29,6 +29,16 @@ platforms.macos-arm64 = { asset_pattern = "emmylua_ls-darwin-arm64.tar.gz" }
 platforms.macos-x64 = { asset_pattern = "emmylua_ls-darwin-x64.tar.gz" }
 
 ################################################################################
+# Env
+################################################################################
+
+[env]
+# .emmyrc.json loads Neovim's runtime as a type library through $VIMRUNTIME. An
+# editor sets it for its language server, but a shell running `emmylua_check`
+# does not.
+VIMRUNTIME = { value = "{{ exec(command='nvim --clean --headless +\"lua io.stdout:write(vim.env.VIMRUNTIME)\" +qa') }}", tools = true }
+
+################################################################################
 # Tasks
 ################################################################################
 
@@ -60,7 +70,9 @@ done
 '''
 
 [tasks.lint]
-env.VIMRUNTIME = "{{ tools.neovim.path }}/share/nvim/runtime"
+# .emmyrc.json loads Neovim's runtime as a type library through $VIMRUNTIME. An
+# editor sets it for its language server, but a shell running `emmylua_check`
+# does not.
 run = "emmylua_check --warnings-as-errors ."
 
 [tasks."ci"]
