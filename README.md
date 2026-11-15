@@ -13,7 +13,7 @@ running it as the main `nvim -l` script runs the schema generator.
 ## Vendor the file
 
 `guard` is meant to travel with the project that uses it, in the same spirit as
-a binary in `node_modules/.bin`. Vendor it at `lua/<MYPKG>/_vendor/guard.lua`
+a binary in `node_modules/.bin`. Vendor it at `lua/<MYPKG>/vendor/guard.lua`
 and require it from there; there is no global install to keep in sync.
 
 An example of this is a plugin called `myplugin`:
@@ -21,10 +21,10 @@ An example of this is a plugin called `myplugin`:
 ```sh
 version=v0.1.0
 base="https://github.com/jrop/guard.nvim/releases/download/$version"
-mkdir -p lua/myplugin/_vendor
-curl -fsSLo lua/myplugin/_vendor/guard.lua "$base/guard.lua"
-curl -fsSLo lua/myplugin/_vendor/guard.lua.sha256 "$base/guard.lua.sha256"
-(cd lua/myplugin/_vendor && sha256sum -c guard.lua.sha256 && rm guard.lua.sha256)
+mkdir -p lua/myplugin/vendor
+curl -fsSLo lua/myplugin/vendor/guard.lua "$base/guard.lua"
+curl -fsSLo lua/myplugin/vendor/guard.lua.sha256 "$base/guard.lua.sha256"
+(cd lua/myplugin/vendor && sha256sum -c guard.lua.sha256 && rm guard.lua.sha256)
 ```
 
 The checksum file names `guard.lua`, so verify it from the directory that holds
@@ -36,7 +36,7 @@ args.nvim bundled, so no other files are needed.
 The examples use the vendored path from the previous section.
 
 ```lua
-local g = require 'myplugin._vendor.guard'
+local g = require 'myplugin.vendor.guard'
 
 local User = g.object {
   name = g.string(),
@@ -79,7 +79,7 @@ Write a schema module that exports every guard you want as types:
 
 ```lua
 -- lua/myplugin/schemas.lua
-local g = require 'myplugin._vendor.guard'
+local g = require 'myplugin.vendor.guard'
 
 return {
   api = {
@@ -96,8 +96,8 @@ name the schema uses for guard, so the schema's `require` resolves to the
 running artifact:
 
 ```sh
-nvim -l lua/myplugin/_vendor/guard.lua \
-  --module myplugin._vendor.guard \
+nvim -l lua/myplugin/vendor/guard.lua \
+  --module myplugin.vendor.guard \
   lua/myplugin/schemas.lua
 ```
 

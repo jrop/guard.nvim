@@ -21,7 +21,7 @@ end
 local running_as_main = is_main()
 if running_as_main and arg and arg[0] then
   local script_dir = vim.fs.dirname(vim.fn.fnamemodify(arg[0], ':p'))
-  if vim.uv.fs_stat(script_dir .. '/guard/_vendor/args.lua') then
+  if vim.uv.fs_stat(script_dir .. '/guard/vendor/args.lua') then
     package.path = script_dir .. '/?.lua;' .. script_dir .. '/?/init.lua;' .. package.path
   end
 end
@@ -1021,7 +1021,7 @@ local function main(argv)
   -- A checkout resolves the vendored parser through package.path, while the
   -- released guard.lua has it inlined. If neither exists, this copy was moved
   -- without its parser, so name the artifact that does support the CLI.
-  local args_ok, args = pcall(require, 'guard._vendor.args')
+  local args_ok, args = pcall(require, 'guard.vendor.args')
   if not args_ok then fail 'args.nvim is not available; use the released guard.lua' end
 
   local parsed_ok, parsed = pcall(args.parse, ARGS_SPEC, argv)

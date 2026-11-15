@@ -11,7 +11,7 @@ describe('guard', function()
   describe('module', function()
     it(
       'does not load the CLI argument parser',
-      function() assert.is_nil(package.loaded['guard._vendor.args']) end
+      function() assert.is_nil(package.loaded['guard.vendor.args']) end
     )
   end)
 

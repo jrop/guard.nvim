@@ -4,7 +4,7 @@
 
 `lua/guard.lua` is one unified file: requiring it returns the validation
 library, and running it as the main `nvim -l` script runs the schema generator.
-A checkout resolves the argument parser from `lua/guard/_vendor/args.lua`, and
+A checkout resolves the argument parser from `lua/guard/vendor/args.lua`, and
 the released artifact has that parser inlined, so one file supports both roles.
 
 The library validates Lua values against composable guards and renders guard
@@ -38,7 +38,7 @@ nvim -l lua/guard/vendor/test.lua spec/guard_spec.lua --filter 'CLI'
   the `Guard` class, primitives, composites, converters, and LuaCATS
   inference. The bottom half is the CLI: argument parsing, target loading,
   namespace walking, annotation rendering, and file writing.
-- **`lua/guard/_vendor/args.lua`** - vendored args.nvim v0.1.0 parser. Treat it
+- **`lua/guard/vendor/args.lua`** - vendored args.nvim v0.1.0 parser. Treat it
   as third-party code: update it from the upstream release rather than editing
   it in place.
 - **`lua/guard/vendor/test.lua`** - vendored test.nvim runner and assertions,
