@@ -49,29 +49,52 @@ local user = User:parse { name = 'Alice', roles = { 'admin' } }
 -- user.age == nil
 ```
 
-`parse` raises on failure. `try_parse` returns a result table instead, so the
-caller can report every problem at once:
+`parse` raises on failure, with the caller's line in the message, which suits a
+value that is invalid only through a bug. Input that may be invalid, such as a
+file or a user's settings, goes through `try_parse` instead. It returns the
+value and `nil`, or `nil` and a `ParseError` that lists every problem:
 
 ```lua
-local result = User:try_parse { name = 42, age = 'old' }
-if not result.ok then
-  vim.notify(result:format(true), vim.log.levels.ERROR)
+local user, err = User:try_parse { name = 42, age = 'old' }
+if err then
+  vim.notify(err:format(true), vim.log.levels.ERROR)
 end
 ```
+
+A valid value can be `nil`, for example from an optional guard, so test `err`
+rather than the value.
 
 A typical JSON boundary parses the string first, then validates the decoded
 value:
 
 ```lua
-local response = g.from_json(User):try_parse(body)
-if response.ok then
-  local user = response.value
-end
+local user, err = g.from_json(User):try_parse(body)
 ```
 
-Guards compose with `optional`, `array`, `record`, `tuple`, `one_of`,
-`all_of`, `map`, and `invariant`. Converters such as `into_number`,
-`into_boolean`, and `into_json` coerce at the boundary.
+Guards compose with `optional`, `default`, `array`, `record`, `tuple`,
+`one_of`, `by_type`, `all_of`, `map`, and `invariant`. Converters such as
+`into_number`, `into_boolean`, and `into_json` coerce at the boundary.
+
+`default` fills in a missing value, and the generated field stays required, so
+code that reads the parsed value never handles a nil:
+
+```lua
+local Config = g.object {
+  ignore = g.string():array():default(function() return {} end),
+}
+```
+
+`make` runs on every parse, so each result gets its own table.
+
+`by_type` chooses one guard by the input's Lua type. When the input fails, it
+reports only that guard's problems, where `one_of` reports every alternative:
+
+```lua
+local Dependency = g.by_type {
+  string = g.string(), -- 'owner/repo'
+  table = g.object({ repo = g.string(), ref = g.string():optional() }, { strict = true }),
+}
+```
 
 ## Generate types
 
@@ -109,9 +132,9 @@ where the schema is applied:
 ```lua
 local schemas = require 'myplugin.schemas'
 
-local result = g.from_json(schemas.api.User):try_parse(body)
-if result.ok then
-  local user = result.value -- [[@as myplugin.schemas.api.User]]
+local user, err = g.from_json(schemas.api.User):try_parse(body)
+if not err then
+  --- @cast user myplugin.schemas.api.User
 end
 ```
 

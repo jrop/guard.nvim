@@ -7,6 +7,15 @@ local g = require 'guard'
 local t = require 'guard.vendor.test'
 local assert, describe, it, after_each = t.assert, t.describe, t.it, t.after_each
 
+--- Parse `value`, which must be invalid, and return the error.
+--- @param guard Guard
+--- @param value any
+--- @return guard.ParseError
+local function parse_error(guard, value)
+  local _, err = guard:try_parse(value)
+  return assert.ok(err, 'expected the parse to fail')
+end
+
 describe('guard', function()
   describe('module', function()
     it(
@@ -266,9 +275,7 @@ describe('guard', function()
 
     it('should report the key and its problem when a key fails', function()
       local StringToNumber = g.record(g.string(), g.number())
-      local result = StringToNumber:try_parse { [1] = 10 }
-      assert.equal(result.ok, false)
-      local msg = g.ParseError.new(result.actual, result.problems):format(false)
+      local msg = parse_error(StringToNumber, { [1] = 10 }):format(false)
       assert.ok(msg:find('[key "1"]', 1, true), msg)
       assert.ok(msg:find('Expected string', 1, true), msg)
     end)
@@ -371,6 +378,42 @@ describe('guard', function()
     end)
   end)
 
+  describe('by_type()', function()
+    local Dependency = g.by_type {
+      string = g.string(),
+      table = g.object({ repo = g.string(), exclude = g.string():array():optional() }, {
+        strict = true,
+      }),
+    }
+
+    it('should parse with the guard for the Lua type of the value', function()
+      assert.equal(Dependency:parse 'me/dep', 'me/dep')
+      assert.deep_equal(Dependency:parse { repo = 'me/dep' }, { repo = 'me/dep' })
+    end)
+
+    it('should report only the problems of the chosen guard', function()
+      local msg = assert.raises(function() Dependency:parse { repo = 'me/dep', exclude = 'x' } end)
+      assert.matches(msg, '`%.exclude`: Expected array')
+      assert.ok(not msg:find('Expected string', 1, true), msg)
+    end)
+
+    it('should name every accepted type when none is chosen', function()
+      local msg = assert.raises(function() Dependency:parse(42) end)
+      assert.matches(msg, 'Expected string or table')
+    end)
+
+    it('should generate the union of its guards, in type-name order', function()
+      local Value = g.by_type { table = g.string():array(), number = g.number() }
+      assert.equal(Value:infer_type(), 'number|string[]')
+    end)
+
+    it('should reject a key that is not a Lua type name', function()
+      -- The type checker rejects the key too; this covers callers it never sees.
+      --- @diagnostic disable-next-line: param-type-mismatch
+      assert.raises(function() g.by_type { str = g.string() } end, 'not a Lua type: str')
+    end)
+  end)
+
   describe('all_of()', function()
     it('should require all guards to match', function()
       local HasName = g.object { name = g.string() }
@@ -421,12 +464,10 @@ describe('guard', function()
 
     it('should name the metatable and the generic fallback in errors', function()
       local Point = {}
-      local named = g.instance_of(Point, 'Point'):try_parse {}
-      local named_msg = g.ParseError.new(named.actual, named.problems):format(false)
+      local named_msg = parse_error(g.instance_of(Point, 'Point'), {}):format(false)
       assert.ok(named_msg:find('Expected instance of Point', 1, true), named_msg)
 
-      local unnamed = g.instance_of(Point):try_parse {}
-      local unnamed_msg = g.ParseError.new(unnamed.actual, unnamed.problems):format(false)
+      local unnamed_msg = parse_error(g.instance_of(Point), {}):format(false)
       assert.ok(unnamed_msg:find('Expected instance of specific metatable', 1, true), unnamed_msg)
     end)
   end)
@@ -441,6 +482,31 @@ describe('guard', function()
     it('should still reject wrong types', function()
       local MaybeString = g.string():optional()
       assert.raises(function() MaybeString:parse(123) end)
+    end)
+  end)
+
+  describe('default()', function()
+    it('should decode nil as a fresh value from make', function()
+      local Tags = g.string():array():default(function() return {} end)
+      local first, second = Tags:parse(nil), Tags:parse(nil)
+      assert.deep_equal(first, {})
+      first[1] = 'mutated'
+      assert.deep_equal(second, {})
+    end)
+
+    it('should parse a present value with the inner guard', function()
+      local Tags = g.string():array():default(function() return {} end)
+      assert.deep_equal(Tags:parse { 'a' }, { 'a' })
+      assert.raises(function() Tags:parse { 1 } end)
+    end)
+
+    it('should generate a required field of the inner type', function()
+      local Config = g.object {
+        tags = g.string():array():default(function() return {} end),
+      }
+      local annotations = Config:to_luacats 'Config'
+      assert.matches(annotations, '---@field tags string%[%]')
+      assert.ok(not annotations:find('tags?', 1, true), annotations)
     end)
   end)
 
@@ -685,11 +751,7 @@ describe('guard', function()
           name = g.string(),
         },
       }
-      local result = User:try_parse { profile = { name = 123 } }
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      -- Use ParseError to format with path
-      local err = g.ParseError.new(result.actual, result.problems)
+      local err = parse_error(User, { profile = { name = 123 } })
       local msg = err:format(false)
       -- Path should show .profile.name
       assert.matches(msg, '%.profile%.name')
@@ -698,10 +760,7 @@ describe('guard', function()
 
     it('should include index for array errors', function()
       local Numbers = g.array(g.number())
-      local result = Numbers:try_parse { 1, 2, 'bad', 4 }
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      local err = parse_error(Numbers, { 1, 2, 'bad', 4 })
       local msg = err:format(false)
       assert.matches(msg, '%[3%]')
       assert.matches(msg, 'Expected number')
@@ -713,10 +772,7 @@ describe('guard', function()
         age = g.number(),
         email = g.string(),
       }
-      local result = User:try_parse { name = 123, age = 'old', email = false }
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      local err = parse_error(User, { name = 123, age = 'old', email = false })
       local msg = err:format(false)
       -- Should report all 3 problems
       assert.matches(msg, '3 problems')
@@ -735,7 +791,7 @@ describe('guard', function()
           },
         },
       }
-      local result = Schema:try_parse {
+      local err = parse_error(Schema, {
         level1 = {
           level2 = {
             level3 = {
@@ -744,10 +800,7 @@ describe('guard', function()
             },
           },
         },
-      }
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      })
       local msg = err:format(false)
       -- Should show full path: .level1.level2.level3[2].value
       assert.matches(msg, '%.level1%.level2%.level3%[2%]%.value')
@@ -755,10 +808,7 @@ describe('guard', function()
 
     it('should show actual values in verbose mode', function()
       local guard = g.number()
-      local result = guard:try_parse 'not a number'
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      local err = parse_error(guard, 'not a number')
       local verbose_msg = err:format(true)
       assert.matches(verbose_msg, 'got:')
       assert.matches(verbose_msg, 'not a number')
@@ -774,10 +824,7 @@ describe('guard', function()
 
     it('should format ParseError nicely', function()
       local User = g.object { name = g.string() }
-      local result = User:try_parse { name = 123 }
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      local err = parse_error(User, { name = 123 })
       local msg = tostring(err)
       -- Should have header
       assert.matches(msg, 'Validation failed')
@@ -792,14 +839,11 @@ describe('guard', function()
         name = g.string(),
         age = g.number(),
       })
-      local result = Users:try_parse {
+      local err = parse_error(Users, {
         { name = 'Alice', age = 30 },
         { name = 123, age = 'old' },
         { name = 'Charlie', age = 25 },
-      }
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      })
       local msg = err:format(false)
       -- Should report errors for item [2]
       assert.matches(msg, '%[2%]%.name')
@@ -810,20 +854,14 @@ describe('guard', function()
 
     it('should show pattern in pattern error', function()
       local guard = g.pattern '^%d%d%d%-%d%d%d%d$'
-      local result = guard:try_parse 'invalid'
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      local err = parse_error(guard, 'invalid')
       local msg = err:format(false)
       assert.matches(msg, 'pattern')
     end)
 
     it('should show expected literals in literal error', function()
       local guard = g.literal('red', 'green', 'blue')
-      local result = guard:try_parse 'yellow'
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      local err = g.ParseError.new(result.actual, result.problems)
+      local err = parse_error(guard, 'yellow')
       local msg = err:format(false)
       assert.matches(msg, 'red')
       assert.matches(msg, 'green')
@@ -832,17 +870,34 @@ describe('guard', function()
   end)
 
   describe('try_parse()', function()
-    it('should return ok result on success', function()
-      local result = g.string():try_parse 'hello'
-      assert.equal(result.ok, true)
-      assert.equal(result.value, 'hello')
+    it('should return the value and no error on success', function()
+      local value, err = g.string():try_parse 'hello'
+      assert.equal(value, 'hello')
+      assert.is_nil(err)
     end)
 
-    it('should return error result on failure', function()
-      local result = g.string():try_parse(123)
-      assert.equal(result.ok, false)
-      assert.not_equal(result.problems, nil)
-      assert.equal(#result.problems, 1)
+    it('should return nil and a ParseError on failure', function()
+      local value, err = g.string():try_parse(123)
+      assert.is_nil(value)
+      assert.equal(getmetatable(err), g.ParseError)
+      --- @cast err guard.ParseError
+      assert.equal(#err.problems, 1)
+      assert.equal(tostring(err), 'Validation failed (1 problem):\n  1. `(root)`: Expected string')
+    end)
+
+    it('should tell a valid nil apart from a failure by the error', function()
+      local value, err = g.string():optional():try_parse(nil)
+      assert.is_nil(value)
+      assert.is_nil(err)
+    end)
+
+    it('should always give a failure at least one problem', function()
+      local Opaque = g.Guard.new(nil, function(x)
+        return { ok = false, actual = x } --[[@as guard.ParseResult<any>]]
+      end)
+      local _, err = Opaque:try_parse 'x'
+      --- @cast err guard.ParseError
+      assert.equal(err.problems[1].message, 'Validation failed')
     end)
   end)
 
