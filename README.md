@@ -10,30 +10,27 @@ at runtime and gives EmmyLua the field types of a valid payload.
 The module is unified: requiring the vendored file returns the library, and
 running it as the main `nvim -l` script runs the schema generator.
 
-## Vendor the file
+## Install
 
 `guard` is meant to travel with the project that uses it, in the same spirit as
-a binary in `node_modules/.bin`. Vendor it at `lua/<MYPKG>/vendor/guard.lua`
-and require it from there; there is no global install to keep in sync.
-
-An example of this is a plugin called `myplugin`:
+a binary in `node_modules/.bin`, so there is no global install to keep in sync.
+Vendor it with [nvim-bundle](https://github.com/jrop/nvim-bundle#install):
 
 ```sh
-version=v0.1.0
-base="https://github.com/jrop/guard.nvim/releases/download/$version"
-mkdir -p lua/myplugin/vendor
-curl -fsSLo lua/myplugin/vendor/guard.lua "$base/guard.lua"
-curl -fsSLo lua/myplugin/vendor/guard.lua.sha256 "$base/guard.lua.sha256"
-(cd lua/myplugin/vendor && sha256sum -c guard.lua.sha256 && rm guard.lua.sha256)
+nvim-bundle install jrop/guard.nvim guard
 ```
 
-The checksum file names `guard.lua`, so verify it from the directory that holds
-the copy. The vendored file is both the runtime library and the CLI, and it has
-args.nvim bundled, so no other files are needed.
+An example of this is a plugin called `myplugin`: the command writes
+`lua/myplugin/vendor/guard.lua`, and records the release it used in
+`nvim-bundle.json`. Append `@<tag>` to the repository to pin another release,
+and run `nvim-bundle update guard` to move to the newest one.
+
+The vendored file is both the runtime library and the CLI, and it has args.nvim
+bundled, so no other files are needed.
 
 ## Validate a value
 
-The examples use the vendored path from the previous section.
+The examples use the vendored path from [Install](#install).
 
 ```lua
 local g = require 'myplugin.vendor.guard'
