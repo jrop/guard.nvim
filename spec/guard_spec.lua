@@ -1152,13 +1152,7 @@ end
 --- a user does.
 --- @param argv string[]
 --- @return vim.SystemCompleted
-local function cli(argv)
-  local cmd = { 'nvim', '--clean', '-l', 'lua/guard.lua' }
-  for _, arg in ipairs(argv) do
-    cmd[#cmd + 1] = arg
-  end
-  return vim.system(cmd, { text = true }):wait()
-end
+local function cli(argv) return t.Nvim.script('lua/guard.lua', argv) end
 
 --- @param argv string[]
 --- @return vim.SystemCompleted
