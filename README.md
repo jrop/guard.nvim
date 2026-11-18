@@ -69,7 +69,7 @@ local user, err = g.from_json(User):try_parse(body)
 ```
 
 Guards compose with `optional`, `default`, `array`, `record`, `tuple`,
-`one_of`, `by_type`, `all_of`, `map`, and `invariant`. Converters such as
+`one_of`, `by_type`, `tagged`, `all_of`, `map`, and `invariant`. Converters such as
 `into_number`, `into_boolean`, and `into_json` coerce at the boundary.
 
 `default` fills in a missing value, and the generated field stays required, so
@@ -92,6 +92,20 @@ local Dependency = g.by_type {
   table = g.object({ repo = g.string(), ref = g.string():optional() }, { strict = true }),
 }
 ```
+
+`tagged` chooses one object guard by the value of a tag field, which suits data
+that names its own shape. Each key is a tag value, and each variant gets that
+tag as a field, so the tag is written once:
+
+```lua
+local Shape = g.tagged('kind', {
+  circle = { radius = g.number() },
+  square = { side = g.number() },
+})
+```
+
+An input with a known tag reports only that variant's problems, and an unknown
+tag is reported at `.kind` with every valid tag.
 
 ## Generate types
 
@@ -123,17 +137,35 @@ nvim -l lua/myplugin/vendor/guard.lua \
 
 The generator writes `lua/myplugin/schemas.types.lua` next to the source. The
 module prefix comes from the path, so the example emits
-`---@class myplugin.schemas.api.User` and its fields. Use the generated name
-where the schema is applied:
+`---@class myplugin.schemas.api.User` and its fields.
+
+The generated file also types the schema module itself, so every `require` of
+it knows each guard's value type, and `parse` returns that type with no cast:
 
 ```lua
 local schemas = require 'myplugin.schemas'
 
-local user, err = g.from_json(schemas.api.User):try_parse(body)
-if not err then
-  --- @cast user myplugin.schemas.api.User
+local user = schemas.api.User:parse(input) -- myplugin.schemas.api.User
+```
+
+A tagged union narrows on its tag, both from `parse` and in the fields of other
+schemas:
+
+```lua
+local shape = schemas.Shape:parse(input)
+if shape.kind == 'circle' then
+  print(shape.radius) -- number
 end
 ```
+
+The generated `---@alias` for a union, such as `myplugin.schemas.Shape`, names
+the union in signatures, but EmmyLua does not narrow through an alias. A
+parameter that checks the tag therefore lists the members, as
+`---@param shape myplugin.schemas.Shape.circle|myplugin.schemas.Shape.square`.
+
+Inside the schema file itself, and before the first generation, EmmyLua infers
+what it can: primitives, `optional`, and `array` are exact, and other guards
+parse to `any`.
 
 The generator defaults to the module name `guard`, which suits a standalone
 copy. Pass `--module` for the name a target file actually requires, and repeat

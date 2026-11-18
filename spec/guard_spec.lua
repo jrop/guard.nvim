@@ -8,7 +8,7 @@ local t = require 'guard.vendor.test'
 local assert, describe, it, after_each = t.assert, t.describe, t.it, t.after_each
 
 --- Parse `value`, which must be invalid, and return the error.
---- @param guard Guard
+--- @param guard guard.Guard<any>
 --- @param value any
 --- @return guard.ParseError
 local function parse_error(guard, value)
@@ -411,6 +411,70 @@ describe('guard', function()
       -- The type checker rejects the key too; this covers callers it never sees.
       --- @diagnostic disable-next-line: param-type-mismatch
       assert.raises(function() g.by_type { str = g.string() } end, 'not a Lua type: str')
+    end)
+  end)
+
+  describe('tagged()', function()
+    local Shape = g.tagged('kind', {
+      circle = { radius = g.number() },
+      square = { side = g.number() },
+    })
+
+    it('should parse each variant and keep its tag', function()
+      assert.deep_equal(
+        Shape:parse { kind = 'circle', radius = 2 },
+        { kind = 'circle', radius = 2 }
+      )
+      assert.deep_equal(Shape:parse { kind = 'square', side = 3 }, { kind = 'square', side = 3 })
+    end)
+
+    it('should report only the problems of the tagged variant', function()
+      local msg = assert.raises(function() Shape:parse { kind = 'circle', radius = 'big' } end)
+      assert.matches(msg, '`%.radius`: Expected number')
+      assert.ok(not msg:find('square', 1, true), msg)
+    end)
+
+    it('should name every tag when the tag is unknown or missing', function()
+      for _, value in ipairs { { kind = 'triangle' }, {} } do
+        local msg = assert.raises(function() Shape:parse(value) end)
+        assert.matches(msg, '`%.kind`: Expected one of: "circle", "square"')
+      end
+    end)
+
+    it('should reject a value that is not a table', function()
+      assert.matches(assert.raises(function() Shape:parse 'circle' end), 'Expected table')
+    end)
+
+    it('should reject a field table that declares the tag itself', function()
+      assert.raises(
+        function() g.tagged('kind', { circle = { kind = g.literal 'circle' } }) end,
+        'variant circle declares its own `kind`'
+      )
+    end)
+
+    it('should reject a variant that is not a table of fields', function()
+      -- A guard is a table too, so it must be told apart from a field table.
+      for _, variant in ipairs { g.object { radius = g.number() }, 42 } do
+        assert.raises(
+          --- @diagnostic disable-next-line: assign-type-mismatch
+          function() g.tagged('kind', { circle = variant }) end,
+          'variant circle must be a table of fields'
+        )
+      end
+    end)
+
+    it('should reject non-string tags and an empty variant table', function()
+      --- @diagnostic disable-next-line: param-type-mismatch
+      assert.raises(function() g.tagged('kind', { { x = g.number() } }) end, 'must be strings')
+      assert.raises(function() g.tagged('kind', {}) end, 'at least one variant')
+    end)
+
+    it('should name its variant classes after their tags', function()
+      local result = Shape:to_luacats 'Shape'
+      assert.ok(result:find('---@class Shape.circle', 1, true), result)
+      assert.ok(result:find("---@field kind 'circle'", 1, true), result)
+      assert.ok(result:find("---@field kind 'square'", 1, true), result)
+      assert.ok(result:find('---@alias Shape Shape.circle|Shape.square', 1, true), result)
     end)
   end)
 
@@ -996,6 +1060,18 @@ describe('guard', function()
         assert.matches(result, 'string|number')
       end)
 
+      it('should keep the alias of a union of generated classes', function()
+        local Event = g.one_of(g.object { x = g.number() }, g.string())
+        local result = Event:to_luacats 'Event'
+        assert.ok(result:find('---@class Event_alt1', 1, true), result)
+        assert.ok(result:find('---@alias Event Event_alt1|string', 1, true), result)
+      end)
+
+      it('should parenthesize a union array item', function()
+        local Values = g.one_of(g.string(), g.number()):array()
+        assert.equal(Values:infer_type(), '(string|number)[]')
+      end)
+
       it('should generate tuple types', function()
         local Point = g.tuple(g.number(), g.number())
         local result = Point:to_luacats 'Point'
@@ -1190,6 +1266,22 @@ return {
 }
 ]]
 
+--- A tagged union that is registered under its own name and also referenced
+--- from another schema's field.
+local TAGGED_SCHEMA = [[
+local g = require 'guard'
+
+local Shape = g.tagged('kind', {
+  circle = { radius = g.number() },
+  square = { side = g.number() },
+})
+
+return {
+  Shape = Shape,
+  Doc = g.object { shape = Shape },
+}
+]]
+
 describe('guard CLI', function()
   after_each(function()
     for _, path in ipairs(created) do
@@ -1313,11 +1405,109 @@ describe('guard CLI', function()
       run_ok { root .. '/lua/schemas.lua' }
 
       local generated = slurp(types_path(root .. '/lua/schemas.lua'))
-      local _, classes = generated:gsub('%-%-%-@class ', '')
+      -- The module's own class types the file, not a schema, so it is not counted.
+      local _, classes = generated:gsub('%-%-%-@class schemas%.', '')
       local _, aliases = generated:gsub('%-%-%-@alias ', '')
       assert.equal(classes, 1)
       assert.equal(aliases, 1)
     end)
+
+    it('spells a registered union as its members where it is referenced', function()
+      local root = fixture { ['lua/schemas.lua'] = TAGGED_SCHEMA }
+      run_ok { root .. '/lua/schemas.lua' }
+
+      local generated = slurp(types_path(root .. '/lua/schemas.lua'))
+      local members = 'schemas.Shape.circle|schemas.Shape.square'
+      assert.ok(generated:find('---@field shape ' .. members, 1, true), generated)
+      assert.ok(generated:find('---@alias schemas.Shape ' .. members, 1, true), generated)
+      local _, circles = generated:gsub('%-%-%-@class schemas%.Shape%.circle\n', '')
+      assert.equal(circles, 1)
+    end)
+
+    it('types the module, so require gives each guard its parse type', function()
+      local root = fixture {
+        ['lua/schemas.lua'] = table.concat({
+          "local g = require 'guard'",
+          'return {',
+          '  api = { User = g.object { name = g.string() } },',
+          "  ['my-key'] = g.number(),",
+          '  helper = function() end,',
+          '}',
+        }, '\n'),
+      }
+      run_ok { root .. '/lua/schemas.lua' }
+
+      local generated = slurp(types_path(root .. '/lua/schemas.lua'))
+      assert.ok(generated:match '^%-%-%-@meta schemas\n', generated)
+      for _, line in ipairs {
+        '---@class schemas\n',
+        '---@field api { User: guard.Guard<schemas.api.User> }\n',
+        '---@field helper any\n',
+        "---@field ['my-key'] guard.Guard<",
+        '---@type schemas\nlocal M\nreturn M\n',
+      } do
+        assert.ok(generated:find(line, 1, true), ('missing %q in:\n%s'):format(line, generated))
+      end
+    end)
+
+    -- The generated types exist to make EmmyLua narrow, so this case asks
+    -- EmmyLua itself. The consumer holds one deliberate mismatch in the
+    -- narrowed branch: reporting it as `number` (not `number?` or `any`) shows
+    -- that `parse` returned the members and the tag check narrowed them, and
+    -- any other warning means a branch failed to narrow.
+    local narrowing = 'narrows a tagged union in EmmyLua, through parse and fields'
+    if vim.fn.executable 'emmylua_check' == 0 then
+      t.pending(narrowing)
+    else
+      it(narrowing, function()
+        local root = fixture {
+          ['.emmyrc.json'] = slurp '.emmyrc.json',
+          ['lua/guard.lua'] = slurp 'lua/guard.lua',
+          ['lua/schemas.lua'] = TAGGED_SCHEMA,
+          ['lua/use.lua'] = table.concat({
+            "local schemas = require 'schemas'",
+            '',
+            '---@param x unknown',
+            'local function area(x)',
+            '  local s = schemas.Shape:parse(x)',
+            "  if s.kind == 'circle' then",
+            '    ---@type string',
+            '    local wrong = s.radius',
+            '    return wrong',
+            '  end',
+            '  ---@type number',
+            '  local side = s.side',
+            '  return side',
+            'end',
+            '',
+            '---@param x unknown',
+            'local function first(x)',
+            '  local doc = schemas.Doc:parse(x)',
+            "  if doc.shape.kind ~= 'square' then return 0 end",
+            '  ---@type number',
+            '  local side = doc.shape.side',
+            '  return side',
+            'end',
+            '',
+            'return { area = area, first = first }',
+          }, '\n'),
+        }
+        run_ok { root .. '/lua/schemas.lua' }
+
+        local proc = vim.system({ 'emmylua_check', '.' }, { cwd = root, text = true }):wait()
+        local out = (proc.stdout or '') .. (proc.stderr or '')
+        -- The copied library is linted against the running Neovim's runtime
+        -- types, which older releases lack, and `mise run lint` covers it, so
+        -- only the generated file and the consumer count.
+        local warnings = 0
+        for file in out:gmatch 'warning: [^\n]*\n%s*%-%-> ([^:]+):' do
+          if file ~= 'lua/guard.lua' then warnings = warnings + 1 end
+        end
+        assert.equal(warnings, 1, out)
+        assert.ok(out:find('Cannot assign `number` to `string`', 1, true), out)
+        assert.ok(out:find('lua/use.lua:8:', 1, true), out)
+      end)
+    end
 
     it('expands a glob and skips existing .types.lua files', function()
       local root = fixture {

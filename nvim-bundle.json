@@ -9,7 +9,7 @@
   "dev_dependencies": {
     "test": {
       "entry": "test",
-      "ref": "v0.3.1",
+      "ref": "v0.4.1",
       "repo": "jrop/test.nvim"
     }
   },
