@@ -4,6 +4,10 @@
 --- @diagnostic disable: undefined-field
 
 local g = require 'guard'
+-- The vendored runner inlines its own copy of guard, so its annotations would
+-- redeclare every guard type. .emmyrc.json therefore hides the runner from the
+-- checker, and this require cannot resolve.
+--- @diagnostic disable-next-line: unresolved-require
 local t = require 'guard.vendor.test'
 local assert, describe, it, after_each = t.assert, t.describe, t.it, t.after_each
 

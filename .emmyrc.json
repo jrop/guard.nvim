@@ -17,6 +17,9 @@
     ],
     "library": [
       "$VIMRUNTIME"
+    ],
+    "ignoreGlobs": [
+      "lua/guard/vendor/test.lua"
     ]
   }
 }

@@ -2,20 +2,20 @@
   "dependencies": {
     "args": {
       "built_with": "0.5.0",
-      "commit": "d3f79feff8cd7c1934c1bd9307fd0832e4d7ae21",
+      "commit": "523ee68e60529e981c1db2117c0a33ca6428d636",
       "entry": "args",
       "kind": "tag",
-      "ref": "v0.1.0",
+      "ref": "v0.1.1",
       "sha256": "5901ed0316fffec92a311a55087e5cffa3ddbd05ace3daed9c942acc83478653",
       "source": "https://github.com/jrop/args.nvim"
     },
     "test": {
       "built_with": "0.5.0",
-      "commit": "1b7224725bb07a582e4f716c294f80d37f5fbb51",
+      "commit": "f9a9a26c52019a86603972d252d3a5b37ed1f68b",
       "entry": "test",
       "kind": "tag",
-      "ref": "v0.4.1",
-      "sha256": "fb08fc17a9ecbca7a99e8056baca7d405326b78b327ce85ca217793e6d920e15",
+      "ref": "v0.4.2",
+      "sha256": "a4a0218cc0710422e2ece172ab2530d8a4243dcfb5645cfbaac06f46d8c420b5",
       "source": "https://github.com/jrop/test.nvim"
     }
   },
